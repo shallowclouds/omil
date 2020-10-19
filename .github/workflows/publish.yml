@@ -1,0 +1,37 @@
+name: Publish built binary to Aliyun OSS
+on:
+  release:
+    types: [created]
+  push:
+    branches: [master]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+
+      # set up golang environment
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.15.3'
+
+      # build
+      - name: Build
+        run: |
+          chmod +x build.sh
+          bash build.sh
+          mkdir -p build-binary
+          tar -czvf omil-$(git rev-parse --short HEAD).tar.gz build
+          mv omil-$(git rev-parse --short HEAD).tar.gz build-binary
+
+      - name: Upload
+        id: upload_to_oss
+        uses: tvrcgo/upload-to-oss@v0.1.1
+        with:
+          key-id: ${{ secrets.OSS_KEY_ID }}
+          key-secret: ${{ secrets.OSS_KEY_SECRET }}
+          region: oss-cn-shenzhen
+          bucket: build-binary
+          asset-path: ./build-binary
+          target-path: /github-actions/omil/

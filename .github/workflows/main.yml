@@ -22,11 +22,30 @@ jobs:
       - run: go version
 
       # go test
-      - name: unit test
+      - name: Unit test
         run: go test ./...
 
-      # build and upload
-      - name: Build and Upload
+      # build
+      - name: Build
         run: |
           chmod +x build.sh
           bash build.sh
+          mkdir -p build-binary
+          tar -czvf omil-$(git rev-parse --short HEAD).tar.gz build
+          mv omil-$(git rev-parse --short HEAD).tar.gz build-binary
+
+      - name: Upload
+        uses: actions/upload-artifact@v2
+        with:
+          name: omil-build
+          path: build
+
+      - name: Upload to OSS
+        uses: tvrcgo/upload-to-oss@v0.1.1
+        with:
+          key-id: ${{ secrets.OSS_KEY_ID }}
+          key-secret: ${{ secrets.OSS_KEY_SECRET }}
+          region: oss-cn-shenzhen
+          bucket: build-binary
+          asset-path: ./build-binary
+          target-path: /github-actions/omil/
