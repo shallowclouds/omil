@@ -1,0 +1,13 @@
+Hostname: "home-lab"
+Targets:
+  - Host: "baidu.com"
+    Name: "baidu"
+  - Host: "google.com"
+    Name: "google"
+  - Host: "10.1.1.1"
+    Name: "gateway"
+InfluxDBv1:
+  Addr: "http://192.168.1.2:8086"
+  Username: "client"
+  Password: "password"
+  Database: "sample-db"
