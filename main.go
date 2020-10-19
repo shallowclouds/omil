@@ -16,19 +16,11 @@ import (
 
 var (
 	compiledTimeString string
-	compiledTime       time.Time
 	version            string
 )
 
 func init() {
-	// parse compiled time
-	if compiledTimeString != "" {
-		var err error
-		compiledTime, err = time.Parse(time.RFC3339, compiledTimeString)
-		if err != nil {
-			compiledTime = time.Date(1900, time.January, 1, 0, 0, 0, 0, time.UTC)
-		}
-	}
+
 }
 
 func main() {
@@ -37,39 +29,9 @@ func main() {
 		HelpName:    "help",
 		Usage:       "omil --config <config_file_path>",
 		ArgsUsage:   "",
-		Version:     "0.0.1",
+		Version:     fmt.Sprintf("\ngit version: %s\nbuild time: %s", version, compiledTimeString),
 		Description: fmt.Sprintf("Simple tool for monitoring network latency, build %s", version),
-		Commands:    cli.Commands{
-			&cli.Command{
-				Name:                   "version",
-				Aliases:                []string{
-					"v",
-				},
-				Usage:                  "--version -v",
-				UsageText:              "--version -v, show version of the command",
-				Description:            "show version of the command",
-				ArgsUsage:              "",
-				Category:               "",
-				BashComplete:           nil,
-				Before:                 nil,
-				After:                  nil,
-				Action: func(c *cli.Context) error {
-					fmt.Printf("git version: %s\n", version)
-					fmt.Printf("build time: %s\n", compiledTime.Format(time.RFC3339))
-					return nil
-				},
-				OnUsageError:           nil,
-				Subcommands:            nil,
-				Flags:                  nil,
-				SkipFlagParsing:        false,
-				HideHelp:               false,
-				HideHelpCommand:        false,
-				Hidden:                 false,
-				UseShortOptionHandling: false,
-				HelpName:               "",
-				CustomHelpTemplate:     "",
-			},
-		},
+		Commands:    nil,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
@@ -150,7 +112,6 @@ func main() {
 		},
 		CommandNotFound: nil,
 		OnUsageError:    nil,
-		Compiled:        compiledTime,
 		Authors: []*cli.Author{
 			{
 				Name:  "Yorling",
