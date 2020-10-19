@@ -4,10 +4,10 @@ set -e
 
 APP_NAME="omil"
 
-FLAGS="-X main.compiledTimeString=$(date --rfc-3339='seconds') -X main.version=$(git rev-parse --short HEAD)"
+FLAGS="-X 'main.compiledTimeString=$(date --rfc-3339='seconds')' -X main.version=$(git rev-parse --short HEAD)"
 
 mkdir -p build/bin build/conf
-cp script/bootstrap.sh build/ 2>/dev/null
+cp bootstrap.sh build/ 2>/dev/null
 
 chmod +x build/bootstrap.sh
 
