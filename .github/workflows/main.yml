@@ -41,6 +41,7 @@ jobs:
           path: build
 
       - name: Upload to OSS
+        id: upload_to_oss
         uses: tvrcgo/upload-to-oss@v0.1.1
         with:
           key-id: ${{ secrets.OSS_KEY_ID }}
@@ -48,4 +49,7 @@ jobs:
           region: oss-cn-shenzhen
           bucket: build-binary
           asset-path: ./build-binary
-          target-path: /github-actions/omil/
+          target-path: /github-actions/omil/unstable
+
+      - name: Build binary download URL
+        run: echo 'Omil binary url:' ${{steps.upload_to_oss.outputs.url}}

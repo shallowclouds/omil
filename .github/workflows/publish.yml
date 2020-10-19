@@ -8,7 +8,6 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
       # set up golang environment
@@ -34,4 +33,4 @@ jobs:
           region: oss-cn-shenzhen
           bucket: build-binary
           asset-path: ./build-binary
-          target-path: /github-actions/omil/
+          target-path: /github-actions/omil/stable
