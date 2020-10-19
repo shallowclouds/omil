@@ -7,7 +7,7 @@ APP_NAME="omil"
 FLAGS="-X 'main.compiledTimeString=$(date --rfc-3339='seconds')' -X main.version=$(git rev-parse --short HEAD)"
 
 mkdir -p build/bin build/conf
-cp bootstrap.sh build/ 2>/dev/null
+cp scripts/bootstrap.sh scripts/omil.service.template scripts/install.sh build/ 2>/dev/null
 
 chmod +x build/bootstrap.sh
 
