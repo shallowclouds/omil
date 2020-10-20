@@ -1,0 +1,9 @@
+[Unit]
+Description=Omil daemon
+
+[Service]
+Type=simple
+ExecStart=%app_dir%/bin/omil --config %app_dir%/conf/config.yml
+
+[Install]
+WantedBy=multi-user.target

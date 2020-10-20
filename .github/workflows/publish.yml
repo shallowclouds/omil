@@ -34,3 +34,6 @@ jobs:
           bucket: build-binary
           asset-path: ./build-binary
           target-path: /github-actions/omil/stable
+
+      - name: Build binary download URL
+        run: echo 'Omil binary url:' ${{steps.upload_to_oss.outputs.url}}
