@@ -9,23 +9,23 @@ import (
 
 type Client struct {
 	influxCli client.Client
-	wg sync.WaitGroup
+	wg        sync.WaitGroup
 	pointChan chan *client.Point
-	doneChan chan struct{}
-	db string
+	doneChan  chan struct{}
+	db        string
 }
 
 const (
-	DefaultBufferSize = 10240
-	DefaultBatchSize = 10
+	DefaultBufferSize    = 10240
+	DefaultBatchSize     = 10
 	DefaultConsumerCount = 1
 )
 
 func NewAsyncClient(addr, db, username, password string) (*Client, error) {
 	cli, err := client.NewHTTPClient(client.HTTPConfig{
-		Addr:               addr,
-		Username:           username,
-		Password:           password,
+		Addr:     addr,
+		Username: username,
+		Password: password,
 	})
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func NewAsyncClient(addr, db, username, password string) (*Client, error) {
 		influxCli: cli,
 		wg:        sync.WaitGroup{},
 		pointChan: pointChan,
-		doneChan: doneChan,
+		doneChan:  doneChan,
 		db:        db,
 	}
 
@@ -49,8 +49,8 @@ func NewAsyncClient(addr, db, username, password string) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Metric(name string, tags map[string]string, value map[string]interface{}) {
-	point, err := client.NewPoint(name, tags, value, time.Now())
+func (c *Client) Metric(name string, timestamp time.Time, tags map[string]string, value map[string]interface{}) {
+	point, err := client.NewPoint(name, tags, value, timestamp)
 	if err != nil {
 		logrus.WithError(err).Warn("failed to create point")
 		return
@@ -60,7 +60,7 @@ func (c *Client) Metric(name string, tags map[string]string, value map[string]in
 
 func (c *Client) consume() {
 	batch, err := client.NewBatchPoints(client.BatchPointsConfig{
-		Database:         c.db,
+		Database: c.db,
 	})
 	if err != nil {
 		logrus.WithError(err).Panic("failed to create batch points")
@@ -69,12 +69,12 @@ func (c *Client) consume() {
 	for {
 		var point *client.Point
 		select {
-		case point=<-c.pointChan:
+		case point = <-c.pointChan:
 		case <-c.doneChan:
 			goto end
 		}
 		batch.AddPoint(point)
-		size ++
+		size++
 		if size < DefaultBatchSize {
 			continue
 		}
@@ -83,7 +83,7 @@ func (c *Client) consume() {
 			continue
 		}
 		batch, err = client.NewBatchPoints(client.BatchPointsConfig{
-			Database:         c.db,
+			Database: c.db,
 		})
 		if err != nil {
 			logrus.WithError(err).Panic("failed to create batch points")
@@ -98,6 +98,6 @@ end:
 }
 
 func (c *Client) Flush() {
-	c.doneChan<- struct{}{}
+	c.doneChan <- struct{}{}
 	c.wg.Wait()
 }

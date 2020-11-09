@@ -17,9 +17,10 @@ type Monitor struct {
 	interval time.Duration
 	client   metric.Client
 	pinger   *ping.Pinger
+	timeout  time.Duration
 }
 
-func NewMonitor(host, from, to string, interval time.Duration, client metric.Client) (*Monitor, error) {
+func NewMonitor(host, from, to string, interval, timeout time.Duration, client metric.Client) (*Monitor, error) {
 	var err error
 	if from == "" {
 		from, err = os.Hostname()
@@ -46,6 +47,7 @@ func NewMonitor(host, from, to string, interval time.Duration, client metric.Cli
 		host:     host,
 		interval: interval,
 		client:   client,
+		timeout:  timeout,
 	}, nil
 }
 
@@ -55,20 +57,28 @@ func (m *Monitor) Start(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create pinger")
 	}
 
+	if m.timeout != 0 {
+		pinger.Timeout = m.timeout
+	}
 	pinger.Interval = m.interval
 	// true for ICMP
 	pinger.SetPrivileged(true)
 	pinger.Size = 64
+
+	// use startTime to calculate packet sent time: startTime + interval * packet_sequence_number
+	// TODO: use a more accurate and graceful way
+	var startTime time.Time
+
 	pinger.OnRecv = func(packet *ping.Packet) {
 		logrus.WithFields(logrus.Fields{
-			"rtt": packet.Rtt,
+			"rtt":    packet.Rtt,
 			"nbytes": packet.Nbytes,
-			"seq": packet.Seq,
-			"ttl": packet.Ttl,
+			"seq":    packet.Seq,
+			"ttl":    packet.Ttl,
 		}).Info("recv ICMP packet")
-		m.client.Metric("ICMP", map[string]string{
+		m.client.Metric("ICMP", startTime.Add(time.Duration(packet.Seq)*m.interval), map[string]string{
 			"from": m.from,
-			"to": m.to,
+			"to":   m.to,
 			"host": m.host,
 		}, map[string]interface{}{
 			"rtt": packet.Rtt.Nanoseconds(),
@@ -78,6 +88,7 @@ func (m *Monitor) Start(ctx context.Context) error {
 
 	m.pinger = pinger
 
+	startTime = time.Now()
 	if err := pinger.Run(); err != nil {
 		return errors.Wrap(err, "failed to run pinger")
 	}

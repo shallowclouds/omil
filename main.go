@@ -64,7 +64,7 @@ func main() {
 
 			monitors := make([]*icmp.Monitor, 0, len(conf.Targets))
 			for _, t := range conf.Targets {
-				monitor, err := icmp.NewMonitor(t.Host, conf.Hostname, t.Name, time.Second, metricClient)
+				monitor, err := icmp.NewMonitor(t.Host, conf.Hostname, t.Name, time.Second, time.Hour * 12, metricClient)
 				if err != nil {
 					logrus.WithError(err).WithFields(logrus.Fields{
 						"target_host": t.Host,
@@ -92,18 +92,32 @@ func main() {
 				wg.Add(1)
 				monitor := monitor
 				go func() {
+					restart := true
+					var mu sync.RWMutex
 					go func() {
 						<-c.Done()
 						logrus.Infof("stopping monitor %s", monitor.Name())
 						if err := monitor.Stop(); err != nil {
 							logrus.WithError(err).Error("failed to stop monitor")
 						}
+						mu.Lock()
+						restart = false
+						mu.Unlock()
 					}()
-					if err := monitor.Start(c); err != nil {
-						logrus.WithError(err).Error("failed to run monitor")
+					for {
+						if err := monitor.Start(c); err != nil {
+							logrus.WithError(err).Error("failed to run monitor")
+						}
+						mu.RLock()
+						if !restart {
+							logrus.Infof("exiting monitor %s", monitor.Name())
+							wg.Done()
+							break
+						}
+						mu.RUnlock()
+						time.Sleep(time.Second)
+						logrus.Infof("restarting monitor %s", monitor.Name())
 					}
-
-					wg.Done()
 				}()
 			}
 			wg.Wait()
