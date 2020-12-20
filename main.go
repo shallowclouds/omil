@@ -1,17 +1,18 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"fmt"
+	"os"
+	"time"
+
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v2"
+
 	"github.com/shallowclouds/omil/config"
 	"github.com/shallowclouds/omil/icmp"
 	"github.com/shallowclouds/omil/influxdb"
-	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli/v2"
-	"os"
-	"os/signal"
-	"sync"
-	"time"
+	"github.com/shallowclouds/omil/loop"
 )
 
 var (
@@ -19,8 +20,41 @@ var (
 	version            string
 )
 
-func init() {
+func mainAction(ctx *cli.Context) error {
+	configFile := ctx.String("config")
+	if configFile != "" {
+		config.SetConfigFilePath(configFile)
+	}
+	conf := config.Config()
+	metricClient, err := influxdb.NewAsyncClient(conf.InfluxDBv1.Addr, conf.InfluxDBv1.Database, conf.InfluxDBv1.Username, conf.InfluxDBv1.Password)
+	if err != nil {
+		logrus.WithError(err).Fatal("failed to create influx db client")
+	}
 
+	monitors := make([]*icmp.Monitor, 0, len(conf.Targets))
+	for _, t := range conf.Targets {
+		monitor, err := icmp.NewMonitor(t.Host, conf.Hostname, t.Name, time.Second, time.Hour*12, metricClient)
+		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"target_host": t.Host,
+				"target_name": t.Name,
+			}).Error("failed to create monitor, skipped")
+			continue
+		}
+		monitors = append(monitors, monitor)
+	}
+
+	if err := loop.Loop(ctx.Context, monitors); err != nil {
+		if errors.Is(err, loop.ErrInterrupt) {
+			logrus.WithError(err).Error("monitor loop exited")
+			return nil
+		}
+		logrus.WithError(err).Error("monitor loop broke")
+		return err
+	}
+
+	logrus.Info("bye~")
+	return nil
 }
 
 func main() {
@@ -31,7 +65,6 @@ func main() {
 		ArgsUsage:   "",
 		Version:     fmt.Sprintf("\ngit version: %s\nbuild time: %s", version, compiledTimeString),
 		Description: fmt.Sprintf("Simple tool for monitoring network latency, build %s", version),
-		Commands:    nil,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
@@ -40,99 +73,16 @@ func main() {
 				EnvVars: []string{
 					"CONFIG_FILE",
 				},
-				Required: false,
-				Value:    "conf/config.yaml",
+				Value: "conf/config.yaml",
 			},
 		},
-		EnableBashCompletion: false,
-		HideHelp:             false,
-		HideHelpCommand:      false,
-		HideVersion:          false,
-		BashComplete:         nil,
-		Before:               nil,
-		After:                nil,
-		Action: func(ctx *cli.Context) error {
-			configFile := ctx.String("config")
-			if configFile != "" {
-				config.SetConfigFilePath(configFile)
-			}
-			conf := config.Config()
-			metricClient, err := influxdb.NewAsyncClient(conf.InfluxDBv1.Addr, conf.InfluxDBv1.Database, conf.InfluxDBv1.Username, conf.InfluxDBv1.Password)
-			if err != nil {
-				logrus.WithError(err).Fatal("failed to create influx db client")
-			}
-
-			monitors := make([]*icmp.Monitor, 0, len(conf.Targets))
-			for _, t := range conf.Targets {
-				monitor, err := icmp.NewMonitor(t.Host, conf.Hostname, t.Name, time.Second, time.Hour * 12, metricClient)
-				if err != nil {
-					logrus.WithError(err).WithFields(logrus.Fields{
-						"target_host": t.Host,
-						"target_name": t.Name,
-					}).Error("failed to create monitor, skipped")
-					continue
-				}
-				monitors = append(monitors, monitor)
-			}
-
-			var wg sync.WaitGroup
-			c, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			sigChan := make(chan os.Signal)
-			signal.Notify(sigChan, os.Interrupt)
-
-			go func() {
-				sig := <-sigChan
-				logrus.Infof("Recv signal %s, exiting...", sig.String())
-				cancel()
-			}()
-
-			for _, monitor := range monitors {
-				wg.Add(1)
-				monitor := monitor
-				go func() {
-					restart := true
-					var mu sync.RWMutex
-					go func() {
-						<-c.Done()
-						logrus.Infof("stopping monitor %s", monitor.Name())
-						if err := monitor.Stop(); err != nil {
-							logrus.WithError(err).Error("failed to stop monitor")
-						}
-						mu.Lock()
-						restart = false
-						mu.Unlock()
-					}()
-					for {
-						if err := monitor.Start(c); err != nil {
-							logrus.WithError(err).Error("failed to run monitor")
-						}
-						mu.RLock()
-						if !restart {
-							logrus.Infof("exiting monitor %s", monitor.Name())
-							wg.Done()
-							break
-						}
-						mu.RUnlock()
-						time.Sleep(time.Second)
-						logrus.Infof("restarting monitor %s", monitor.Name())
-					}
-				}()
-			}
-			wg.Wait()
-			logrus.Info("bye~")
-			return nil
-		},
-		CommandNotFound: nil,
-		OnUsageError:    nil,
+		Action: mainAction,
 		Authors: []*cli.Author{
 			{
 				Name:  "Yorling",
 				Email: "ishallowcloud@gmail.com",
 			},
 		},
-		Copyright:              "",
 		UseShortOptionHandling: true,
 	}
 

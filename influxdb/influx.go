@@ -1,10 +1,11 @@
 package influxdb
 
 import (
-	client "github.com/influxdata/influxdb1-client/v2"
-	"github.com/sirupsen/logrus"
 	"sync"
 	"time"
+
+	client "github.com/influxdata/influxdb1-client/v2"
+	"github.com/sirupsen/logrus"
 )
 
 type Client struct {

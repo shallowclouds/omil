@@ -3,12 +3,14 @@ package icmp
 import (
 	"context"
 	"fmt"
-	"github.com/go-ping/ping"
-	"github.com/pkg/errors"
-	"github.com/shallowclouds/omil/metric"
-	"github.com/sirupsen/logrus"
 	"os"
 	"time"
+
+	"github.com/go-ping/ping"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+
+	"github.com/shallowclouds/omil/metric"
 )
 
 type Monitor struct {
