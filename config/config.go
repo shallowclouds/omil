@@ -1,9 +1,10 @@
 package config
 
 import (
+	"sync"
+
 	"github.com/jinzhu/configor"
 	"github.com/sirupsen/logrus"
-	"sync"
 )
 
 type Target struct {
