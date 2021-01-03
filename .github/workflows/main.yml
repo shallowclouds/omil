@@ -30,7 +30,8 @@ jobs:
           chmod +x build.sh
           bash build.sh
           mkdir -p build-binary
-          tar -czvf omil-$(git rev-parse --short HEAD).tar.gz build
+          cp -r build omil
+          tar -czvf omil-$(git rev-parse --short HEAD).tar.gz omil
           mv omil-$(git rev-parse --short HEAD).tar.gz build-binary
 
       - name: Upload
