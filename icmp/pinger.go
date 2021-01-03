@@ -13,6 +13,7 @@ import (
 	"github.com/shallowclouds/omil/metric"
 )
 
+// Monitor sends and receives ICMP packet to the specified host.
 type Monitor struct {
 	from, to string
 	host     string
@@ -22,6 +23,13 @@ type Monitor struct {
 	timeout  time.Duration
 }
 
+// NewMonitor creates a ICMP network monitor.
+// `host` is the target hostname need to test.
+// `from` is the name of this server, used as metric tag `from`.
+// `to` is the name of target host, used as metric tag `to`.
+// `interval` specifies the time interval to send ICMP packets.
+// `timeout` specifies the time to end the loop, 0 for infinite.
+// `client` is the metric client to send data points.
 func NewMonitor(host, from, to string, interval, timeout time.Duration, client metric.Client) (*Monitor, error) {
 	var err error
 	if from == "" {
@@ -40,7 +48,7 @@ func NewMonitor(host, from, to string, interval, timeout time.Duration, client m
 	}
 
 	if client == nil {
-		return nil, fmt.Errorf("nil metric client")
+		return nil, errors.New("nil metric client")
 	}
 
 	return &Monitor{
@@ -53,21 +61,25 @@ func NewMonitor(host, from, to string, interval, timeout time.Duration, client m
 	}, nil
 }
 
-func (m *Monitor) Start(ctx context.Context) error {
+// Start starts the loop to test network and send data points.
+//
+// Return an error if loop failed.
+func (m *Monitor) Start(_ context.Context) error {
 	pinger, err := ping.NewPinger(m.host)
 	if err != nil {
-		return errors.Wrap(err, "failed to create pinger")
+		return errors.WithMessage(err, "failed to create pinger")
 	}
 
 	if m.timeout != 0 {
 		pinger.Timeout = m.timeout
 	}
 	pinger.Interval = m.interval
-	// true for ICMP
+	// True for ICMP
 	pinger.SetPrivileged(true)
 	pinger.Size = 64
 
-	// use startTime to calculate packet sent time: startTime + interval * packet_sequence_number
+	// Use startTime to calculate packet sent time: startTime + interval * packet_sequence_number,
+	// as will cant put the send time in the ICMP packet data at present.
 	// TODO: use a more accurate and graceful way
 	var startTime time.Time
 
@@ -90,9 +102,27 @@ func (m *Monitor) Start(ctx context.Context) error {
 
 	m.pinger = pinger
 
+	sendTicker := time.NewTicker(m.interval)
+	defer sendTicker.Stop()
+
 	startTime = time.Now()
+	go func() {
+		// Metrics for sending packets.
+		for t := range sendTicker.C {
+			if t.IsZero() {
+				break
+			}
+			m.client.Metric("ICMP", t, map[string]string{
+				"from": m.from,
+				"to":   m.to,
+				"host": m.host,
+			}, map[string]interface{}{
+				"sent": 1,
+			})
+		}
+	}()
 	if err := pinger.Run(); err != nil {
-		return errors.Wrap(err, "failed to run pinger")
+		return errors.WithMessage(err, "failed to run pinger")
 	}
 
 	return nil
