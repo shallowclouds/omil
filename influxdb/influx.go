@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Client sends data points to InfluxDB v1.* server asynchronously.
 type Client struct {
 	influxCli client.Client
 	wg        sync.WaitGroup
@@ -98,7 +99,13 @@ end:
 	c.wg.Done()
 }
 
-func (c *Client) Flush() {
+func (c *Client) Flush() error {
 	c.doneChan <- struct{}{}
 	c.wg.Wait()
+	return nil
+}
+
+func (c *Client) Stop() error {
+	_ = c.Flush()
+	return c.influxCli.Close()
 }
