@@ -26,7 +26,7 @@ func mainAction(ctx *cli.Context) error {
 		config.SetConfigFilePath(configFile)
 	}
 	conf := config.Config()
-	metricClient, err := influxdb.NewAsyncClient(conf.InfluxDBv1.Addr, conf.InfluxDBv1.Database, conf.InfluxDBv1.Username, conf.InfluxDBv1.Password)
+	metricClient, err := influxdb.NewClientV2(conf.InfluxDBv2.Addr, conf.InfluxDBv2.Org, conf.InfluxDBv2.Bucket, conf.InfluxDBv2.Token)
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create influx db client")
 	}

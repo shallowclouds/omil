@@ -11,3 +11,8 @@ InfluxDBv1:
   Username: "client"
   Password: "password"
   Database: "sample-db"
+InfluxDBv2:
+  Addr: "http://192.168.1.2:8086"
+  Org: "org-name"
+  Bucket: "bucket-name"
+  Token: "token"

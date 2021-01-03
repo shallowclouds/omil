@@ -20,6 +20,12 @@ type configStruct struct {
 		Password string `yaml:"Password"`
 		Database string `yaml:"Database"`
 	} `yaml:"InfluxDBv1"`
+	InfluxDBv2 struct {
+		Addr   string `yaml:"Addr"`
+		Org    string `yaml:"Org"`
+		Bucket string `yaml:"Bucket"`
+		Token  string `yaml:"Token"`
+	} `yaml:"InfluxDBv2"`
 	Targets []Target `yaml:"Targets"`
 }
 
