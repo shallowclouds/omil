@@ -13,13 +13,15 @@ type Target struct {
 }
 
 type configStruct struct {
-	Hostname   string `yaml:"Hostname"`
+	Hostname string `yaml:"Hostname"`
+	// Deprecated: InfluxDB 1.* sever configs.
 	InfluxDBv1 struct {
 		Addr     string `yaml:"Addr"`
 		Username string `yaml:"Username"`
 		Password string `yaml:"Password"`
 		Database string `yaml:"Database"`
 	} `yaml:"InfluxDBv1"`
+	// InfluxDB 2.* sever configs.
 	InfluxDBv2 struct {
 		Addr   string `yaml:"Addr"`
 		Org    string `yaml:"Org"`

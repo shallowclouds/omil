@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Client sends data points to InfluxDB v1.* server asynchronously.
+// Deprecated: Client sends data points to InfluxDB v1.* server asynchronously.
 type Client struct {
 	influxCli client.Client
 	wg        sync.WaitGroup
@@ -23,6 +23,7 @@ const (
 	DefaultConsumerCount = 1
 )
 
+// Deprecated: NewAsyncClient creates an async client to send data points to InfluxDB server.
 func NewAsyncClient(addr, db, username, password string) (*Client, error) {
 	cli, err := client.NewHTTPClient(client.HTTPConfig{
 		Addr:     addr,
