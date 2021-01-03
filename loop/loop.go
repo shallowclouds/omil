@@ -34,35 +34,42 @@ func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
 		cancel()
 	}()
 
+	restart := true
+	var mu sync.RWMutex
+	go func() {
+		<-ctx.Done()
+		mu.Lock()
+		restart = false
+		mu.Unlock()
+		for _, monitor := range monitors {
+			logrus.Infof("stopping monitor %s", monitor.Name())
+			if err := monitor.Stop(); err != nil {
+				logrus.WithError(err).Error("failed to stop monitor")
+			}
+		}
+	}()
 	for _, monitor := range monitors {
 		wg.Add(1)
-		monitor := monitor
+		m := monitor
 		go func() {
-			restart := true
-			var mu sync.RWMutex
-			go func() {
-				<-ctx.Done()
-				logrus.Infof("stopping monitor %s", monitor.Name())
-				if err := monitor.Stop(); err != nil {
-					logrus.WithError(err).Error("failed to stop monitor")
-				}
-				mu.Lock()
-				restart = false
-				mu.Unlock()
-			}()
 			for {
-				if err := monitor.Start(ctx); err != nil {
-					logrus.WithError(err).Error("failed to run monitor")
-				}
 				mu.RLock()
 				if !restart {
-					logrus.Infof("exiting monitor %s", monitor.Name())
+					logrus.Infof("exiting monitor %s", m.Name())
 					wg.Done()
 					break
 				}
 				mu.RUnlock()
+				if err := m.Start(ctx); err != nil {
+					logrus.WithError(err).Error("failed to run monitor")
+				}
 				time.Sleep(restartInterval)
-				logrus.Infof("restarting monitor %s", monitor.Name())
+
+				mu.RLock()
+				if restart {
+					logrus.Infof("restarting monitor %s", m.Name())
+				}
+				mu.RUnlock()
 			}
 		}()
 	}
