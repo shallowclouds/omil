@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/shallowclouds/omil/metric"
 	"github.com/urfave/cli/v2"
 )
 
@@ -125,7 +123,7 @@ targets:
 	app := cli.NewApp()
 	set := flag.NewFlagSet("test", 0)
 	_ = set.Parse([]string{"--config", tmpFile.Name()})
-	ctx := cli.NewContext(app, set, nil)
+	ctx = cli.NewContext(app, set, nil)
 
 	// Create a context with timeout to prevent test from hanging
 	ctxWithTimeout, cancel := context.WithTimeout(ctx.Context, 2*time.Second)
@@ -165,7 +163,7 @@ targets: []
 	app := cli.NewApp()
 	set := flag.NewFlagSet("test", 0)
 	_ = set.Parse([]string{"--config", tmpFile.Name()})
-	ctx := cli.NewContext(app, set, nil)
+	ctx = cli.NewContext(app, set, nil)
 
 	// Create a context with timeout to prevent test from hanging
 	ctxWithTimeout, cancel := context.WithTimeout(ctx.Context, 2*time.Second)

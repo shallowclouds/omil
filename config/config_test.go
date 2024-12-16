@@ -197,42 +197,74 @@ Targets:
 
 		SetConfigFilePath(testConfigPath)
 
+		// Create test logger and capture its output BEFORE calling Config
+		logger, buf := testLogger()
+		logger.SetLevel(logrus.FatalLevel)
+		origLogger := logrus.StandardLogger()
+
+		// Replace the global logger and its formatter
+		logrus.SetOutput(logger.Out)
+		logrus.SetFormatter(&logrus.TextFormatter{
+			DisableColors: true,
+			FullTimestamp: true,
+		})
+		defer func() {
+			logrus.SetOutput(origLogger.Out)
+			logrus.SetFormatter(origLogger.Formatter)
+		}()
+
 		// Save original os.Exit and restore it after test
 		origExit := osExit
 		defer func() { osExit = origExit }()
 
-		// Create test logger and capture its output
-		logger, buf := testLogger()
-		origLogger := logrus.StandardLogger()
-		logrus.SetOutput(logger.Out)
-		defer func() {
-			logrus.SetOutput(origLogger.Out)
-		}()
-
 		exitCalled := false
 		osExit = func(code int) {
 			exitCalled = true
+			t.Logf("os.Exit called with code %d", code)
+			// Print buffer contents at exit time
+			t.Logf("Logger buffer at exit: %q", buf.String())
+		}
+
+		// Add debug logging
+		t.Logf("Test starting with config file: %s", testConfigPath)
+		if _, err := os.Stat(testConfigPath); err != nil {
+			t.Logf("Config file status: %v", err)
+		} else {
+			t.Log("Config file exists")
 		}
 
 		// Call Config() in a goroutine since it will exit
 		done := make(chan struct{})
 		go func() {
+			defer close(done)
+			defer func() {
+				if r := recover(); r != nil {
+					t.Logf("Recovered from panic: %v", r)
+				}
+			}()
 			Config()
-			close(done)
 		}()
 
 		// Wait for either exit to be called or timeout
 		select {
 		case <-done:
+			output := buf.String()
+			t.Logf("Final logger output: %q", output)
 			if !exitCalled {
 				t.Error("expected os.Exit to be called for invalid config")
 			}
-			output := buf.String()
-			if !strings.Contains(output, "failed to load config") {
-				t.Errorf("expected error message to contain 'failed to load config', got: %q", output)
+			expectedMsg := "failed to load config from file"
+			if !strings.Contains(output, expectedMsg) {
+				t.Errorf("expected error message to contain %q, got: %q", expectedMsg, output)
+				// Print the output in a more readable format
+				t.Logf("Logger output (line by line):")
+				for i, line := range strings.Split(output, "\n") {
+					t.Logf("Line %d: %q", i+1, line)
+				}
 			}
 		case <-time.After(time.Second):
 			t.Error("test timed out waiting for Config() to complete")
+			t.Logf("Buffer contents at timeout: %q", buf.String())
 		}
 	})
 
@@ -278,5 +310,10 @@ func testLogger() (*logrus.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	logger := logrus.New()
 	logger.Out = &buf
+	logger.Formatter = &logrus.TextFormatter{
+		DisableColors:    true,
+		TimestampFormat: "2006-01-02 15:04:05",
+		FullTimestamp:   true,
+	}
 	return logger, &buf
 }
