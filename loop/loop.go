@@ -9,9 +9,14 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-
-	"github.com/shallowclouds/omil/icmp"
 )
+
+// Monitor represents a monitor that can be started and stopped
+type Monitor interface {
+	Start(ctx context.Context) error
+	Stop() error
+	Name() string
+}
 
 var (
 	ErrInterrupt = errors.New("signal interrupt")
@@ -19,7 +24,7 @@ var (
 	restartInterval = time.Second
 )
 
-func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
+func Loop(ctx context.Context, monitors []Monitor) (err error) {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
