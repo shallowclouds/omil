@@ -1,7 +1,7 @@
 package config
 
 import (
-	"fmt"
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,20 +201,17 @@ Targets:
 		origExit := osExit
 		defer func() { osExit = origExit }()
 
-		// Save original logrus.Fatal and restore it after test
-		origLogFatal := logrus.Fatal
-		defer func() { logrus.Fatal = origLogFatal }()
+		// Create test logger and capture its output
+		logger, buf := testLogger()
+		origLogger := logrus.StandardLogger()
+		logrus.SetOutput(logger.Out)
+		defer func() {
+			logrus.SetOutput(origLogger.Out)
+		}()
 
 		exitCalled := false
 		osExit = func(code int) {
 			exitCalled = true
-		}
-
-		var loggedError string
-		logrus.Fatal = func(args ...interface{}) {
-			if len(args) > 0 {
-				loggedError = fmt.Sprint(args...)
-			}
 		}
 
 		// Call Config() in a goroutine since it will exit
@@ -230,8 +227,9 @@ Targets:
 			if !exitCalled {
 				t.Error("expected os.Exit to be called for invalid config")
 			}
-			if !strings.Contains(loggedError, "failed to load config") {
-				t.Errorf("expected error message to contain 'failed to load config', got: %q", loggedError)
+			output := buf.String()
+			if !strings.Contains(output, "failed to load config") {
+				t.Errorf("expected error message to contain 'failed to load config', got: %q", output)
 			}
 		case <-time.After(time.Second):
 			t.Error("test timed out waiting for Config() to complete")
@@ -273,4 +271,12 @@ Targets:
 			t.Error("test timed out waiting for Config() to complete")
 		}
 	})
+}
+
+// testLogger creates a new logrus logger instance with a buffer for capturing output
+func testLogger() (*logrus.Logger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.Out = &buf
+	return logger, &buf
 }
