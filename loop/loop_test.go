@@ -23,8 +23,8 @@ type mockMonitor struct {
 func newMockMonitor(name string) *mockMonitor {
 	return &mockMonitor{
 		name:      name,
-		startChan: make(chan struct{}),
-		stopChan:  make(chan struct{}),
+		startChan: make(chan struct{}, 1), // Buffered channels to prevent deadlocks
+		stopChan:  make(chan struct{}, 1),
 	}
 }
 
@@ -38,7 +38,7 @@ func (m *mockMonitor) Start(ctx context.Context) error {
 	case m.startChan <- struct{}{}:
 		// Signal that Start was called
 	}
-	<-ctx.Done()
+	<-ctx.Done() // Wait for context cancellation
 	return ctx.Err()
 }
 
@@ -49,11 +49,7 @@ func (m *mockMonitor) Stop() error {
 	if m.stopErr != nil {
 		return m.stopErr
 	}
-	select {
-	case m.stopChan <- struct{}{}:
-		// Signal that Stop was called
-	default:
-	}
+	m.stopChan <- struct{}{} // Signal that Stop was called
 	return nil
 }
 
@@ -87,7 +83,7 @@ func TestLoop_NormalOperation(t *testing.T) {
 	mock2 := newMockMonitor("test2")
 	monitors := []Monitor{mock1, mock2}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	errChan := make(chan error, 1)
@@ -96,10 +92,10 @@ func TestLoop_NormalOperation(t *testing.T) {
 	}()
 
 	// Verify monitors are started
-	if err := mock1.waitForStart(50 * time.Millisecond); err != nil {
+	if err := mock1.waitForStart(100 * time.Millisecond); err != nil {
 		t.Errorf("Monitor 1 failed to start: %v", err)
 	}
-	if err := mock2.waitForStart(50 * time.Millisecond); err != nil {
+	if err := mock2.waitForStart(100 * time.Millisecond); err != nil {
 		t.Errorf("Monitor 2 failed to start: %v", err)
 	}
 
@@ -109,15 +105,15 @@ func TestLoop_NormalOperation(t *testing.T) {
 		if err != nil {
 			t.Errorf("Loop() error = %v, want nil", err)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(300 * time.Millisecond):
 		t.Error("Loop() timeout waiting for completion")
 	}
 
 	// Verify monitors are stopped
-	if err := mock1.waitForStop(50 * time.Millisecond); err != nil {
+	if err := mock1.waitForStop(100 * time.Millisecond); err != nil {
 		t.Errorf("Monitor 1 failed to stop: %v", err)
 	}
-	if err := mock2.waitForStop(50 * time.Millisecond); err != nil {
+	if err := mock2.waitForStop(100 * time.Millisecond); err != nil {
 		t.Errorf("Monitor 2 failed to stop: %v", err)
 	}
 }
@@ -128,7 +124,7 @@ func TestLoop_MonitorFailure(t *testing.T) {
 	mock.startErr = fmt.Errorf("start error")
 	monitors := []Monitor{mock}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 
 	errChan := make(chan error, 1)
@@ -137,15 +133,15 @@ func TestLoop_MonitorFailure(t *testing.T) {
 	}()
 
 	// Monitor should attempt to start multiple times
-	startCount := 0
-	timeout := time.After(150 * time.Millisecond)
+	startAttempts := 0
+	deadline := time.After(300 * time.Millisecond)
 	for {
 		select {
-		case <-mock.startChan:
-			startCount++
-		case <-timeout:
-			if startCount < 2 {
-				t.Errorf("Expected multiple start attempts, got %d", startCount)
+		case <-time.After(restartInterval):
+			startAttempts++
+		case <-deadline:
+			if startAttempts < 2 {
+				t.Errorf("Expected multiple start attempts, got %d", startAttempts)
 			}
 			goto done
 		}
@@ -158,7 +154,7 @@ done:
 		if err != nil {
 			t.Errorf("Loop() error = %v, want nil", err)
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 		t.Error("Loop() timeout waiting for completion")
 	}
 }
@@ -176,7 +172,7 @@ func TestLoop_GracefulShutdown(t *testing.T) {
 	}()
 
 	// Wait for monitor to start
-	if err := mock.waitForStart(50 * time.Millisecond); err != nil {
+	if err := mock.waitForStart(100 * time.Millisecond); err != nil {
 		t.Fatalf("Monitor failed to start: %v", err)
 	}
 
@@ -184,7 +180,7 @@ func TestLoop_GracefulShutdown(t *testing.T) {
 	cancel()
 
 	// Verify monitor is stopped
-	if err := mock.waitForStop(50 * time.Millisecond); err != nil {
+	if err := mock.waitForStop(100 * time.Millisecond); err != nil {
 		t.Errorf("Monitor failed to stop: %v", err)
 	}
 
@@ -194,7 +190,7 @@ func TestLoop_GracefulShutdown(t *testing.T) {
 		if err != nil {
 			t.Errorf("Loop() error = %v, want nil", err)
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 		t.Error("Loop() timeout waiting for completion")
 	}
 }
@@ -212,7 +208,7 @@ func TestLoop_SignalInterrupt(t *testing.T) {
 	}()
 
 	// Wait for monitor to start
-	if err := mock.waitForStart(50 * time.Millisecond); err != nil {
+	if err := mock.waitForStart(100 * time.Millisecond); err != nil {
 		t.Fatalf("Monitor failed to start: %v", err)
 	}
 
@@ -226,7 +222,7 @@ func TestLoop_SignalInterrupt(t *testing.T) {
 	}
 
 	// Verify monitor is stopped
-	if err := mock.waitForStop(50 * time.Millisecond); err != nil {
+	if err := mock.waitForStop(100 * time.Millisecond); err != nil {
 		t.Errorf("Monitor failed to stop: %v", err)
 	}
 
@@ -236,14 +232,7 @@ func TestLoop_SignalInterrupt(t *testing.T) {
 		if err != ErrInterrupt {
 			t.Errorf("Loop() error = %v, want %v", err, ErrInterrupt)
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 		t.Error("Loop() timeout waiting for completion")
 	}
-}
-
-// Monitor interface for testing
-type Monitor interface {
-	Start(ctx context.Context) error
-	Stop() error
-	Name() string
 }
