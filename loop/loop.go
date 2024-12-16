@@ -29,12 +29,14 @@ func Loop(ctx context.Context, monitors []Monitor) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sigChan := make(chan os.Signal)
+	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
+	defer signal.Stop(sigChan)
 
+	errChan := make(chan error, 1)
 	go func() {
 		sig := <-sigChan
-		err = ErrInterrupt
+		errChan <- ErrInterrupt
 		logrus.Infof("Recv signal %s, exiting...", sig.String())
 		cancel()
 	}()
@@ -53,31 +55,44 @@ func Loop(ctx context.Context, monitors []Monitor) (err error) {
 			}
 		}
 	}()
+
 	for _, monitor := range monitors {
 		wg.Add(1)
 		m := monitor
 		go func() {
+			defer wg.Done()
 			for {
 				mu.RLock()
 				if !restart {
 					logrus.Infof("exiting monitor %s", m.Name())
-					wg.Done()
-					break
+					mu.RUnlock()
+					return
 				}
 				mu.RUnlock()
+
 				if err := m.Start(ctx); err != nil {
 					logrus.WithError(err).Error("failed to run monitor")
 				}
-				time.Sleep(restartInterval)
 
-				mu.RLock()
-				if restart {
-					logrus.Infof("restarting monitor %s", m.Name())
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(restartInterval):
+					mu.RLock()
+					if restart {
+						logrus.Infof("restarting monitor %s", m.Name())
+					}
+					mu.RUnlock()
 				}
-				mu.RUnlock()
 			}
 		}()
 	}
+
 	wg.Wait()
-	return nil
+	select {
+	case err = <-errChan:
+		return err
+	default:
+		return nil
+	}
 }
