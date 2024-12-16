@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -73,8 +74,8 @@ func TestConfig(t *testing.T) {
 
 		// Config() calls log.Fatal on error, so we need to prevent that
 		// Save original os.Exit and restore it after test
-		originalOsExit := osExit
-		defer func() { osExit = originalOsExit }()
+		origExit := osExit
+		defer func() { osExit = origExit }()
 
 		exitCalled := false
 		osExit = func(code int) {
@@ -96,8 +97,8 @@ func TestConfig(t *testing.T) {
 		SetConfigFilePath("nonexistent.yml")
 
 		// Config() calls log.Fatal on error, so we need to prevent that
-		originalOsExit := osExit
-		defer func() { osExit = originalOsExit }()
+		origExit := osExit
+		defer func() { osExit = origExit }()
 
 		exitCalled := false
 		osExit = func(code int) {
@@ -110,6 +111,3 @@ func TestConfig(t *testing.T) {
 		}
 	})
 }
-
-// Override os.Exit for testing
-var osExit = os.Exit
