@@ -161,5 +161,8 @@ func (m *Monitor) Stop() error {
 }
 
 func (m *Monitor) Name() string {
+	if m.from == "" && m.to == "" {
+		return "<>-<>"
+	}
 	return fmt.Sprintf("<%s>-<%s>", m.from, m.to)
 }

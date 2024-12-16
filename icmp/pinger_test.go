@@ -171,6 +171,16 @@ func TestMonitor_Start(t *testing.T) {
 			runErr:  fmt.Errorf("run error"),
 			wantErr: true,
 		},
+		{
+			name:    "invalid host",
+			host:    "invalid.host.that.does.not.exist",
+			wantErr: true,
+		},
+		{
+			name:    "empty host",
+			host:    "",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,11 +191,32 @@ func TestMonitor_Start(t *testing.T) {
 				t.Fatalf("NewMonitor() error = %v", err)
 			}
 
+			if tt.name == "invalid host" || tt.name == "empty host" {
+				// Don't set mock pinger to test real pinger creation
+				err = m.Start(context.Background())
+				if !tt.wantErr {
+					t.Errorf("Start() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				return
+			}
+
 			// Set up mock pinger
-			m.pinger = &mockPinger{
+			mockPinger := &mockPinger{
 				host:   tt.host,
 				runErr: tt.runErr,
 			}
+			// Set OnRecv to simulate packet reception
+			mockPinger.onRecv = func(packet *ping.Packet) {
+				m.client.Metric("ICMP", time.Now(), map[string]string{
+					"from": m.from,
+					"to":   m.to,
+					"host": m.host,
+				}, map[string]interface{}{
+					"rtt": packet.Rtt.Nanoseconds(),
+					"ttl": packet.Ttl,
+				})
+			}
+			m.pinger = mockPinger
 
 			ctx := context.Background()
 			err = m.Start(ctx)
