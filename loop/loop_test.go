@@ -32,11 +32,12 @@ func (m *mockMonitor) Start(ctx context.Context) error {
 	if m.startErr != nil {
 		return m.startErr
 	}
+	// Signal start before waiting for context cancellation
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
 	case m.startChan <- struct{}{}:
 		// Signal that Start was called
+	default:
+		// Channel is full, which means we've already signaled
 	}
 	<-ctx.Done() // Wait for context cancellation
 	return ctx.Err()
@@ -137,8 +138,11 @@ func TestLoop_MonitorFailure(t *testing.T) {
 	deadline := time.After(300 * time.Millisecond)
 	for {
 		select {
-		case <-time.After(restartInterval):
+		case <-mock.startChan:
 			startAttempts++
+			if startAttempts >= 2 {
+				goto done
+			}
 		case <-deadline:
 			if startAttempts < 2 {
 				t.Errorf("Expected multiple start attempts, got %d", startAttempts)
@@ -212,7 +216,7 @@ func TestLoop_SignalInterrupt(t *testing.T) {
 		t.Fatalf("Monitor failed to start: %v", err)
 	}
 
-	// Simulate interrupt signal
+	// Simulate interrupt signal once
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
 		t.Fatalf("Failed to find process: %v", err)
