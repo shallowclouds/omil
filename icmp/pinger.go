@@ -13,6 +13,9 @@ import (
 	"github.com/shallowclouds/omil/metric"
 )
 
+// For testing purposes
+var hostnameFunc = os.Hostname
+
 // pinger defines the interface for ICMP ping operations
 type pinger interface {
 	SetPrivileged(privileged bool)
@@ -53,14 +56,15 @@ type Monitor struct {
 // `client` is the metric client to send data points.
 func NewMonitor(host, from, to string, interval, timeout time.Duration, client metric.Client) (*Monitor, error) {
 	var err error
-	if from == "" {
-		from, err = os.Hostname()
+	// Only set default hostname if from is empty and host is not empty
+	if from == "" && host != "" {
+		from, err = hostnameFunc()
 		if err != nil {
-			logrus.WithError(err).Warn("get hostname err")
-			from = "localhost"
+			return nil, errors.WithMessage(err, "failed to get hostname")
 		}
 	}
-	if to == "" {
+	// Only set default to if it's empty and host is not empty
+	if to == "" && host != "" {
 		to = host
 	}
 
@@ -124,7 +128,10 @@ func (m *Monitor) Start(_ context.Context) error {
 		}
 	}
 
-	m.pinger.SetPrivileged(true)
+	// Set privileged mode based on the pinger type
+	if adapter, ok := m.pinger.(*pingAdapter); ok {
+		adapter.SetPrivileged(false) // Default to unprivileged mode for security
+	}
 
 	sendTicker := time.NewTicker(m.interval)
 	defer sendTicker.Stop()
@@ -161,8 +168,5 @@ func (m *Monitor) Stop() error {
 }
 
 func (m *Monitor) Name() string {
-	if m.from == "" && m.to == "" {
-		return "<>-<>"
-	}
 	return fmt.Sprintf("<%s>-<%s>", m.from, m.to)
 }

@@ -39,16 +39,19 @@ func (m *mockMetricClient) Exit() error {
 
 // mockPinger implements the pinger interface for testing
 type mockPinger struct {
-	host     string
-	interval time.Duration
-	timeout  time.Duration
-	size     int
-	stopped  bool
-	onRecv   func(*ping.Packet)
-	runErr   error
+	host       string
+	interval   time.Duration
+	timeout    time.Duration
+	size       int
+	stopped    bool
+	onRecv     func(*ping.Packet)
+	runErr     error
+	privileged bool
 }
 
-func (p *mockPinger) SetPrivileged(privileged bool) {}
+func (p *mockPinger) SetPrivileged(privileged bool) {
+	p.privileged = privileged
+}
 
 func (p *mockPinger) Run() error {
 	if p.runErr != nil {
@@ -70,17 +73,47 @@ func (p *mockPinger) Stop() {
 	p.stopped = true
 }
 
+// customPinger implements pinger interface but is not a pingAdapter
+type customPinger struct {
+	privileged bool
+	onRecv     func(*ping.Packet)
+}
+
+func (p *customPinger) SetPrivileged(privileged bool) {
+	p.privileged = privileged
+}
+
+func (p *customPinger) Run() error {
+	// Simulate packet reception
+	if p.onRecv != nil {
+		p.onRecv(&ping.Packet{
+			Nbytes: 64,
+			Seq:    1,
+			Ttl:    64,
+			Rtt:    time.Millisecond * 100,
+		})
+	}
+	return nil
+}
+
+func (p *customPinger) Stop() {}
+
 // TestNewMonitor tests the NewMonitor function with various parameter combinations
 func TestNewMonitor(t *testing.T) {
+	// Save original hostname function and restore after test
+	originalHostname := hostnameFunc
+	defer func() { hostnameFunc = originalHostname }()
+
 	tests := []struct {
-		name     string
-		host     string
-		from     string
-		to       string
-		interval time.Duration
-		timeout  time.Duration
-		client   metric.Client
-		wantErr  bool
+		name         string
+		host         string
+		from         string
+		to           string
+		interval     time.Duration
+		timeout      time.Duration
+		client       metric.Client
+		wantErr      bool
+		mockHostname func() (string, error)
 	}{
 		{
 			name:     "valid parameters",
@@ -122,10 +155,26 @@ func TestNewMonitor(t *testing.T) {
 			client:   &mockMetricClient{},
 			wantErr:  false,
 		},
+		{
+			name:     "hostname resolution failure",
+			host:     "example.com",
+			from:     "", // Empty from will trigger hostname resolution
+			to:       "destination",
+			interval: time.Second,
+			timeout:  time.Minute,
+			client:   &mockMetricClient{},
+			wantErr:  true,
+			mockHostname: func() (string, error) {
+				return "", fmt.Errorf("hostname resolution failed")
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.mockHostname != nil {
+				hostnameFunc = tt.mockHostname
+			}
 			m, err := NewMonitor(tt.host, tt.from, tt.to, tt.interval, tt.timeout, tt.client)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewMonitor() error = %v, wantErr %v", err, tt.wantErr)
@@ -155,38 +204,87 @@ func TestNewMonitor(t *testing.T) {
 // TestMonitor_Start tests the Start method of Monitor
 func TestMonitor_Start(t *testing.T) {
 	tests := []struct {
-		name    string
-		host    string
-		runErr  error
-		wantErr bool
+		name         string
+		host         string
+		runErr       error
+		privileged   bool
+		interval     time.Duration
+		timeout      time.Duration
+		wantErr      bool
+		customPinger pinger // Allow custom pinger implementation
 	}{
 		{
-			name:    "successful start",
-			host:    "example.com",
-			wantErr: false,
+			name:       "successful start",
+			host:       "example.com",
+			privileged: true,
+			interval:   time.Second,
+			timeout:    time.Minute,
+			wantErr:    false,
 		},
 		{
-			name:    "run error",
-			host:    "example.com",
-			runErr:  fmt.Errorf("run error"),
-			wantErr: true,
+			name:       "run error",
+			host:       "example.com",
+			runErr:     fmt.Errorf("run error"),
+			privileged: true,
+			interval:   time.Second,
+			timeout:    time.Minute,
+			wantErr:    true,
 		},
 		{
-			name:    "invalid host",
-			host:    "invalid.host.that.does.not.exist",
-			wantErr: true,
+			name:       "invalid host",
+			host:       "invalid.host.that.does.not.exist",
+			privileged: true,
+			interval:   time.Second,
+			timeout:    time.Minute,
+			wantErr:    true,
 		},
 		{
-			name:    "empty host",
-			host:    "",
-			wantErr: true,
+			name:       "empty host",
+			host:       "",
+			privileged: true,
+			interval:   time.Second,
+			timeout:    time.Minute,
+			wantErr:    true,
+		},
+		{
+			name:       "unprivileged mode",
+			host:       "example.com",
+			privileged: false,
+			interval:   time.Second,
+			timeout:    time.Minute,
+			wantErr:    false,
+		},
+		{
+			name:       "custom interval",
+			host:       "example.com",
+			privileged: true,
+			interval:   time.Second * 2,
+			timeout:    time.Minute,
+			wantErr:    false,
+		},
+		{
+			name:       "custom timeout",
+			host:       "example.com",
+			privileged: true,
+			interval:   time.Second,
+			timeout:    time.Minute * 2,
+			wantErr:    false,
+		},
+		{
+			name:         "non-adapter pinger",
+			host:         "example.com",
+			privileged:   true,
+			interval:     time.Second,
+			timeout:      time.Minute,
+			wantErr:      false,
+			customPinger: &customPinger{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &mockMetricClient{}
-			m, err := NewMonitor(tt.host, "source", "destination", time.Second, time.Minute, client)
+			m, err := NewMonitor(tt.host, "source", "destination", tt.interval, tt.timeout, client)
 			if err != nil {
 				t.Fatalf("NewMonitor() error = %v", err)
 			}
@@ -200,26 +298,43 @@ func TestMonitor_Start(t *testing.T) {
 				return
 			}
 
-			// Set up mock pinger
-			mockPinger := &mockPinger{
-				host:   tt.host,
-				runErr: tt.runErr,
+			// Use custom pinger if provided, otherwise create mock pinger
+			if tt.customPinger != nil {
+				customPinger := tt.customPinger.(*customPinger)
+				customPinger.onRecv = func(packet *ping.Packet) {
+					m.client.Metric("ICMP", time.Now(), map[string]string{
+						"from": m.from,
+						"to":   m.to,
+						"host": m.host,
+					}, map[string]interface{}{
+						"rtt": packet.Rtt.Nanoseconds(),
+						"ttl": packet.Ttl,
+					})
+				}
+				m.pinger = customPinger
+			} else {
+				mockPinger := &mockPinger{
+					host:       tt.host,
+					runErr:     tt.runErr,
+					privileged: tt.privileged,
+					interval:   tt.interval,
+					timeout:    tt.timeout,
+				}
+				// Set OnRecv to simulate packet reception
+				mockPinger.onRecv = func(packet *ping.Packet) {
+					m.client.Metric("ICMP", time.Now(), map[string]string{
+						"from": m.from,
+						"to":   m.to,
+						"host": m.host,
+					}, map[string]interface{}{
+						"rtt": packet.Rtt.Nanoseconds(),
+						"ttl": packet.Ttl,
+					})
+				}
+				m.pinger = mockPinger
 			}
-			// Set OnRecv to simulate packet reception
-			mockPinger.onRecv = func(packet *ping.Packet) {
-				m.client.Metric("ICMP", time.Now(), map[string]string{
-					"from": m.from,
-					"to":   m.to,
-					"host": m.host,
-				}, map[string]interface{}{
-					"rtt": packet.Rtt.Nanoseconds(),
-					"ttl": packet.Ttl,
-				})
-			}
-			m.pinger = mockPinger
 
-			ctx := context.Background()
-			err = m.Start(ctx)
+			err = m.Start(context.Background())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Start() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -228,6 +343,21 @@ func TestMonitor_Start(t *testing.T) {
 				// Verify metrics were recorded
 				if len(client.metrics) == 0 {
 					t.Error("Start() did not record any metrics")
+				}
+
+				// Verify privileged mode was set correctly
+				if mockPinger, ok := m.pinger.(*mockPinger); ok && mockPinger.privileged != tt.privileged {
+					t.Errorf("Start() privileged = %v, want %v", mockPinger.privileged, tt.privileged)
+				}
+
+				// Verify interval and timeout were set correctly
+				if mockPinger, ok := m.pinger.(*mockPinger); ok {
+					if tt.name == "custom interval" && mockPinger.interval != tt.interval {
+						t.Errorf("Start() interval = %v, want %v", mockPinger.interval, tt.interval)
+					}
+					if tt.name == "custom timeout" && mockPinger.timeout != tt.timeout {
+						t.Errorf("Start() timeout = %v, want %v", mockPinger.timeout, tt.timeout)
+					}
 				}
 			}
 		})
@@ -320,5 +450,30 @@ func TestMonitor_Name(t *testing.T) {
 				t.Errorf("Name() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestMonitor_Start_Context tests the context handling in Start method
+func TestMonitor_Start_Context(t *testing.T) {
+	client := &mockMetricClient{}
+	m, err := NewMonitor("example.com", "source", "destination", time.Second, time.Minute, client)
+	if err != nil {
+		t.Fatalf("NewMonitor() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Set up mock pinger that blocks until context is canceled
+	mockPinger := &mockPinger{
+		host:       "example.com",
+		privileged: true,
+		runErr:     fmt.Errorf("context canceled"),
+	}
+	m.pinger = mockPinger
+
+	err = m.Start(ctx)
+	if err == nil {
+		t.Error("Start() with canceled context should return error")
 	}
 }
