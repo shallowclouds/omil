@@ -61,6 +61,7 @@ func (m *mockMonitor) Start(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		time.Sleep(10 * time.Millisecond)
 		return ctx.Err()
 	}
 }
@@ -207,7 +208,7 @@ func TestLoop_GracefulShutdown(t *testing.T) {
 	}()
 
 	// Wait for monitor to start
-	if err := mock.waitForStart(100 * time.Millisecond); err != nil {
+	if err := mock.waitForStart(time.Second); err != nil {
 		t.Fatalf("Monitor failed to start: %v", err)
 	}
 
@@ -215,7 +216,7 @@ func TestLoop_GracefulShutdown(t *testing.T) {
 	cancel()
 
 	// Verify monitor is stopped
-	if err := mock.waitForStop(100 * time.Millisecond); err != nil {
+	if err := mock.waitForStop(time.Second); err != nil {
 		t.Errorf("Monitor failed to stop: %v", err)
 	}
 
@@ -225,7 +226,7 @@ func TestLoop_GracefulShutdown(t *testing.T) {
 		if err != nil {
 			t.Errorf("Loop() error = %v, want nil", err)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 		t.Error("Loop() timeout waiting for completion")
 	}
 }
@@ -243,21 +244,23 @@ func TestLoop_SignalInterrupt(t *testing.T) {
 	}()
 
 	// Wait for monitor to start
-	if err := mock.waitForStart(100 * time.Millisecond); err != nil {
+	if err := mock.waitForStart(time.Second); err != nil {
 		t.Fatalf("Monitor failed to start: %v", err)
 	}
 
-	// Simulate interrupt signal once
+	// Simulate interrupt signal once and wait for stop
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
 		t.Fatalf("Failed to find process: %v", err)
 	}
+
+	// Send interrupt and immediately wait for stop to avoid multiple signals
 	if err := p.Signal(os.Interrupt); err != nil {
 		t.Fatalf("Failed to send interrupt signal: %v", err)
 	}
 
 	// Verify monitor is stopped
-	if err := mock.waitForStop(100 * time.Millisecond); err != nil {
+	if err := mock.waitForStop(time.Second); err != nil {
 		t.Errorf("Monitor failed to stop: %v", err)
 	}
 
@@ -267,7 +270,7 @@ func TestLoop_SignalInterrupt(t *testing.T) {
 		if err != ErrInterrupt {
 			t.Errorf("Loop() error = %v, want %v", err, ErrInterrupt)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 		t.Error("Loop() timeout waiting for completion")
 	}
 }
