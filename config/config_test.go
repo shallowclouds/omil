@@ -174,9 +174,20 @@ Targets:
 		// Create invalid config in temp dir
 		testConfigPath := filepath.Join(tmpDir, "invalid_config.yml")
 		err := os.WriteFile(testConfigPath, []byte(`
-invalid yaml file:
-  - missing colon
-  unclosed quote: "test
+# Invalid YAML with syntax errors
+Hostname: test-host
+InfluxDBv2:
+  Addr: http://localhost:8086
+  Token: "unclosed string
+  Org: test-org
+  Bucket: [invalid bracket notation}
+Targets:
+  - Host: google.com
+    Name: google
+    : invalid-colon
+  - Host: "github.com
+    Name: github
+    Tags: *undefined-anchor
 `), 0644)
 		if err != nil {
 			t.Fatal(err)
