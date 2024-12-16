@@ -8,9 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shallowclouds/omil/config"
-	"github.com/shallowclouds/omil/icmp"
-	"github.com/shallowclouds/omil/loop"
 	"github.com/shallowclouds/omil/metric"
 	"github.com/urfave/cli/v2"
 )
@@ -18,11 +15,19 @@ import (
 // mockMetricClient implements metric.Client interface for testing
 type mockMetricClient struct {
 	metric.Client
-	points  []metric.Point
+	points  []struct {
+		name   string
+		fields map[string]interface{}
+		tags   map[string]string
+	}
 	exitErr error
 }
 
-func (m *mockMetricClient) Send(point metric.Point) error {
+func (m *mockMetricClient) Send(point struct {
+	name   string
+	fields map[string]interface{}
+	tags   map[string]string
+}) error {
 	m.points = append(m.points, point)
 	return nil
 }
