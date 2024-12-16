@@ -44,6 +44,11 @@ func (m *mockMonitor) Start(ctx context.Context) error {
 		m.runningMu.Lock()
 		m.running = false
 		m.runningMu.Unlock()
+
+		select {
+		case m.stopChan <- struct{}{}:
+		default:
+		}
 	}()
 
 	if m.startErr != nil {
@@ -59,17 +64,13 @@ func (m *mockMonitor) Start(ctx context.Context) error {
 	default:
 	}
 
-	select {
-	case <-ctx.Done():
-		time.Sleep(10 * time.Millisecond)
-		return ctx.Err()
-	}
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func (m *mockMonitor) Stop() error {
 	m.mu.Lock()
-	m.stopped = true
-	m.mu.Unlock()
+	defer m.mu.Unlock()
 
 	m.runningMu.Lock()
 	m.running = false
@@ -78,7 +79,11 @@ func (m *mockMonitor) Stop() error {
 	if m.stopErr != nil {
 		return m.stopErr
 	}
-	m.stopChan <- struct{}{}
+
+	select {
+	case m.stopChan <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -248,16 +253,19 @@ func TestLoop_SignalInterrupt(t *testing.T) {
 		t.Fatalf("Monitor failed to start: %v", err)
 	}
 
-	// Simulate interrupt signal once and wait for stop
+	// Send interrupt signal
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
 		t.Fatalf("Failed to find process: %v", err)
 	}
 
-	// Send interrupt and immediately wait for stop to avoid multiple signals
+	// Send interrupt and wait for stop
 	if err := p.Signal(os.Interrupt); err != nil {
 		t.Fatalf("Failed to send interrupt signal: %v", err)
 	}
+
+	// Give some time for signal handling
+	time.Sleep(100 * time.Millisecond)
 
 	// Verify monitor is stopped
 	if err := mock.waitForStop(time.Second); err != nil {
