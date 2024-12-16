@@ -52,9 +52,17 @@ func Config() *configStruct {
 			paths = []string{"conf/config.yml"}
 		}
 
+		// Check if the config file exists and is accessible
+		configPath := paths[0]
+		if _, err := os.Stat(configPath); err != nil {
+			// Any error accessing the file should be treated as file not found
+			logrus.WithField("path", configPath).WithError(err).Fatal("config file not found")
+			osExit(1)
+			return
+		}
+
 		// Try to load config from specified paths
 		if err := configor.Load(config, paths...); err != nil {
-			// If we can't load the config file, exit immediately
 			logrus.WithError(err).Fatal("failed to load config from file")
 			osExit(1)
 			return
