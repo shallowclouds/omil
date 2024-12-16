@@ -31,7 +31,7 @@ func mainAction(ctx *cli.Context) error {
 		logrus.WithError(err).Fatal("failed to create influx db client")
 	}
 
-	monitors := make([]*icmp.Monitor, 0, len(conf.Targets))
+	monitors := make([]loop.Monitor, 0, len(conf.Targets))
 	for _, t := range conf.Targets {
 		// As pinger stores all packets data in memory,
 		// so too long timeout may cause high memory usage.
