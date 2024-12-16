@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/jinzhu/configor"
@@ -49,7 +50,8 @@ func Config() *configStruct {
 		config = new(configStruct)
 		paths := []string{configFilePath}
 		if configFilePath == "" {
-			paths = []string{"conf/config.yml"}
+			// Always use filepath.Join for path construction
+			paths = []string{filepath.Join("conf", "config.yml")}
 		}
 
 		// Check if the config file exists and is accessible

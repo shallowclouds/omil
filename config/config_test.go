@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -8,6 +9,13 @@ import (
 )
 
 func TestConfig(t *testing.T) {
+	// Create a temporary directory for tests
+	tmpDir, err := os.MkdirTemp("", "omil-config-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
 	// Reset package-level variables before each test
 	config = nil
 	configFilePath = ""
@@ -18,6 +26,23 @@ func TestConfig(t *testing.T) {
 		config = nil
 		configFilePath = ""
 		initConfigOnce = sync.Once{}
+
+		// Create conf directory in temp dir
+		confDir := filepath.Join(tmpDir, "conf")
+		if err := os.MkdirAll(confDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Change working directory to temp dir
+		origWd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.Chdir(origWd)
+
+		if err := os.Chdir(tmpDir); err != nil {
+			t.Fatal(err)
+		}
 
 		// Save original os.Exit and restore it after test
 		origExit := osExit
@@ -52,12 +77,25 @@ func TestConfig(t *testing.T) {
 		configFilePath = ""
 		initConfigOnce = sync.Once{}
 
-		// Get absolute path to test config
-		pwd, err := filepath.Abs(".")
+		// Create test config in temp dir
+		testConfigPath := filepath.Join(tmpDir, "valid_config.yml")
+		err := os.WriteFile(testConfigPath, []byte(`
+Hostname: test-host
+InfluxDBv2:
+  Addr: http://localhost:8086
+  Org: test-org
+  Bucket: test-bucket
+  Token: test-token
+Targets:
+  - Host: google.com
+    Name: google
+  - Host: github.com
+    Name: github
+`), 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
-		testConfigPath := filepath.Join(pwd, "testdata", "valid_config.yml")
+
 		SetConfigFilePath(testConfigPath)
 
 		// Save original os.Exit and restore it after test
@@ -107,13 +145,19 @@ func TestConfig(t *testing.T) {
 		configFilePath = ""
 		initConfigOnce = sync.Once{}
 
-		// Get absolute path to test config
-		pwd, err := filepath.Abs(".")
+		// Create invalid config in temp dir
+		testConfigPath := filepath.Join(tmpDir, "invalid_config.yml")
+		err := os.WriteFile(testConfigPath, []byte(`
+invalid yaml file:
+  - missing colon
+  unclosed quote: "test
+`), 0644)
 		if err != nil {
 			t.Fatal(err)
 		}
-		testConfigPath := filepath.Join(pwd, "testdata", "invalid_config.yml")
+
 		SetConfigFilePath(testConfigPath)
+
 
 		// Save original os.Exit and restore it after test
 		origExit := osExit
@@ -148,7 +192,8 @@ func TestConfig(t *testing.T) {
 		configFilePath = ""
 		initConfigOnce = sync.Once{}
 
-		SetConfigFilePath("nonexistent.yml")
+		nonexistentPath := filepath.Join(tmpDir, "nonexistent.yml")
+		SetConfigFilePath(nonexistentPath)
 
 		// Save original os.Exit and restore it after test
 		origExit := osExit
