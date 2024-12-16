@@ -291,13 +291,29 @@ func TestMonitor_Name(t *testing.T) {
 			to:   "",
 			want: "<>-<>",
 		},
+		{
+			name: "empty from",
+			from: "",
+			to:   "destination",
+			want: "<>-<destination>",
+		},
+		{
+			name: "empty to",
+			from: "source",
+			to:   "",
+			want: "<source>-<>",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m, err := NewMonitor("example.com", tt.from, tt.to, time.Second, time.Minute, &mockMetricClient{})
-			if err != nil {
-				t.Fatalf("NewMonitor() error = %v", err)
+			// Create Monitor directly to avoid NewMonitor's default value setting
+			m := &Monitor{
+				from:     tt.from,
+				to:       tt.to,
+				host:     "example.com",
+				interval: time.Second,
+				client:   &mockMetricClient{},
 			}
 
 			if got := m.Name(); got != tt.want {
