@@ -1,0 +1,3 @@
+Hostname: 123  # Invalid type: should be string
+InfluxDBv2:
+  Addr: []  # Invalid type: should be string

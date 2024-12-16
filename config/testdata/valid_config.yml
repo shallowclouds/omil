@@ -1,0 +1,11 @@
+Hostname: "test-host"
+InfluxDBv2:
+  Addr: "http://localhost:8086"
+  Org: "test-org"
+  Bucket: "test-bucket"
+  Token: "test-token"
+Targets:
+  - Host: "google.com"
+    Name: "google"
+  - Host: "github.com"
+    Name: "github"

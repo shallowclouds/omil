@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"sync"
 
 	"github.com/jinzhu/configor"
@@ -35,6 +36,8 @@ var (
 	configFilePath string
 	initConfigOnce sync.Once
 	config         *configStruct
+	// Override os.Exit for testing
+	osExit = os.Exit
 )
 
 func SetConfigFilePath(filepath string) {
@@ -46,6 +49,7 @@ func Config() *configStruct {
 		config = new(configStruct)
 		if err := configor.Load(config, configFilePath, "conf/config.yml"); err != nil {
 			logrus.WithError(err).Fatal("failed to load config from file")
+			osExit(1)
 		}
 	})
 	return config
