@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestConfig(t *testing.T) {
@@ -27,9 +28,21 @@ func TestConfig(t *testing.T) {
 			exitCalled = true
 		}
 
-		Config()
-		if !exitCalled {
-			t.Error("expected os.Exit to be called when default config is missing")
+		// Call Config() in a goroutine since it will exit
+		done := make(chan struct{})
+		go func() {
+			Config()
+			close(done)
+		}()
+
+		// Wait for either exit to be called or timeout
+		select {
+		case <-done:
+			if !exitCalled {
+				t.Error("expected os.Exit to be called when default config is missing")
+			}
+		case <-time.After(time.Second):
+			t.Error("test timed out waiting for Config() to complete")
 		}
 	})
 
@@ -111,9 +124,21 @@ func TestConfig(t *testing.T) {
 			exitCalled = true
 		}
 
-		Config()
-		if !exitCalled {
-			t.Error("expected os.Exit to be called for invalid config")
+		// Call Config() in a goroutine since it will exit
+		done := make(chan struct{})
+		go func() {
+			Config()
+			close(done)
+		}()
+
+		// Wait for either exit to be called or timeout
+		select {
+		case <-done:
+			if !exitCalled {
+				t.Error("expected os.Exit to be called for invalid config")
+			}
+		case <-time.After(time.Second):
+			t.Error("test timed out waiting for Config() to complete")
 		}
 	})
 
@@ -134,9 +159,21 @@ func TestConfig(t *testing.T) {
 			exitCalled = true
 		}
 
-		Config()
-		if !exitCalled {
-			t.Error("expected os.Exit to be called for nonexistent config")
+		// Call Config() in a goroutine since it will exit
+		done := make(chan struct{})
+		go func() {
+			Config()
+			close(done)
+		}()
+
+		// Wait for either exit to be called or timeout
+		select {
+		case <-done:
+			if !exitCalled {
+				t.Error("expected os.Exit to be called for nonexistent config")
+			}
+		case <-time.After(time.Second):
+			t.Error("test timed out waiting for Config() to complete")
 		}
 	})
 }

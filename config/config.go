@@ -51,9 +51,20 @@ func Config() *configStruct {
 		if configFilePath == "" {
 			paths = []string{"conf/config.yml"}
 		}
-		if err := configor.Load(config, paths...); err != nil {
+
+		// Try to load config from specified paths
+		err := configor.Load(config, paths...)
+		if err != nil {
 			logrus.WithError(err).Fatal("failed to load config from file")
+			osExit(1) // Ensure this is called after Fatal
+			return    // This ensures we don't continue after osExit in tests
+		}
+
+		// Validate required fields
+		if config.Hostname == "" {
+			logrus.Fatal("hostname is required in config")
 			osExit(1)
+			return
 		}
 	})
 	return config
