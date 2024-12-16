@@ -33,6 +33,23 @@ func TestConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		// Create default config file
+		defaultConfigPath := filepath.Join(confDir, "config.yml")
+		err := os.WriteFile(defaultConfigPath, []byte(`
+Hostname: default-host
+InfluxDBv2:
+  Addr: http://localhost:8086
+  Org: default-org
+  Bucket: default-bucket
+  Token: default-token
+Targets:
+  - Host: localhost
+    Name: local
+`), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		// Change working directory to temp dir
 		origWd, err := os.Getwd()
 		if err != nil {
@@ -53,21 +70,30 @@ func TestConfig(t *testing.T) {
 			exitCalled = true
 		}
 
-		// Call Config() in a goroutine since it will exit
-		done := make(chan struct{})
-		go func() {
-			Config()
-			close(done)
-		}()
+		cfg := Config()
+		if exitCalled {
+			t.Fatal("os.Exit was called unexpectedly")
+		}
+		if cfg == nil {
+			t.Fatal("expected non-nil config")
+		}
 
-		// Wait for either exit to be called or timeout
-		select {
-		case <-done:
-			if !exitCalled {
-				t.Error("expected os.Exit to be called when default config is missing")
-			}
-		case <-time.After(time.Second):
-			t.Error("test timed out waiting for Config() to complete")
+		// Verify config parsing
+		if cfg.Hostname != "default-host" {
+			t.Errorf("expected hostname 'default-host', got %q", cfg.Hostname)
+		}
+
+		if cfg.InfluxDBv2.Addr != "http://localhost:8086" {
+			t.Errorf("expected InfluxDB addr 'http://localhost:8086', got %q", cfg.InfluxDBv2.Addr)
+		}
+
+		if len(cfg.Targets) != 1 {
+			t.Errorf("expected 1 target, got %d", len(cfg.Targets))
+		}
+
+		// Verify target
+		if cfg.Targets[0].Host != "localhost" || cfg.Targets[0].Name != "local" {
+			t.Errorf("unexpected target: %+v", cfg.Targets[0])
 		}
 	})
 
@@ -157,7 +183,6 @@ invalid yaml file:
 		}
 
 		SetConfigFilePath(testConfigPath)
-
 
 		// Save original os.Exit and restore it after test
 		origExit := osExit
