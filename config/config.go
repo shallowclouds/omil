@@ -47,7 +47,11 @@ func SetConfigFilePath(filepath string) {
 func Config() *configStruct {
 	initConfigOnce.Do(func() {
 		config = new(configStruct)
-		if err := configor.Load(config, configFilePath, "conf/config.yml"); err != nil {
+		paths := []string{configFilePath}
+		if configFilePath == "" {
+			paths = []string{"conf/config.yml"}
+		}
+		if err := configor.Load(config, paths...); err != nil {
 			logrus.WithError(err).Fatal("failed to load config from file")
 			osExit(1)
 		}

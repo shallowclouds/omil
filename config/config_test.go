@@ -13,14 +13,23 @@ func TestConfig(t *testing.T) {
 	initConfigOnce = sync.Once{}
 
 	t.Run("default config path", func(t *testing.T) {
-		// Should try to load from default path conf/config.yml
+		// Reset package-level variables
 		config = nil
 		configFilePath = ""
 		initConfigOnce = sync.Once{}
 
-		cfg := Config()
-		if cfg == nil {
-			t.Error("expected non-nil config even with missing default config")
+		// Save original os.Exit and restore it after test
+		origExit := osExit
+		defer func() { osExit = origExit }()
+
+		exitCalled := false
+		osExit = func(code int) {
+			exitCalled = true
+		}
+
+		Config()
+		if !exitCalled {
+			t.Error("expected os.Exit to be called when default config is missing")
 		}
 	})
 
@@ -30,10 +39,27 @@ func TestConfig(t *testing.T) {
 		configFilePath = ""
 		initConfigOnce = sync.Once{}
 
-		testConfigPath := filepath.Join("testdata", "valid_config.yml")
+		// Get absolute path to test config
+		pwd, err := filepath.Abs(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		testConfigPath := filepath.Join(pwd, "testdata", "valid_config.yml")
 		SetConfigFilePath(testConfigPath)
 
+		// Save original os.Exit and restore it after test
+		origExit := osExit
+		defer func() { osExit = origExit }()
+
+		exitCalled := false
+		osExit = func(code int) {
+			exitCalled = true
+		}
+
 		cfg := Config()
+		if exitCalled {
+			t.Fatal("os.Exit was called unexpectedly")
+		}
 		if cfg == nil {
 			t.Fatal("expected non-nil config")
 		}
@@ -68,10 +94,14 @@ func TestConfig(t *testing.T) {
 		configFilePath = ""
 		initConfigOnce = sync.Once{}
 
-		testConfigPath := filepath.Join("testdata", "invalid_config.yml")
+		// Get absolute path to test config
+		pwd, err := filepath.Abs(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		testConfigPath := filepath.Join(pwd, "testdata", "invalid_config.yml")
 		SetConfigFilePath(testConfigPath)
 
-		// Config() calls log.Fatal on error, so we need to prevent that
 		// Save original os.Exit and restore it after test
 		origExit := osExit
 		defer func() { osExit = origExit }()
@@ -95,7 +125,7 @@ func TestConfig(t *testing.T) {
 
 		SetConfigFilePath("nonexistent.yml")
 
-		// Config() calls log.Fatal on error, so we need to prevent that
+		// Save original os.Exit and restore it after test
 		origExit := osExit
 		defer func() { osExit = origExit }()
 
