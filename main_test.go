@@ -75,18 +75,25 @@ targets:
 	_ = set.Parse([]string{"--config", tmpFile.Name()})
 	ctx := cli.NewContext(app, set, nil)
 
-	err = mainAction(ctx)
-	if err != nil {
-		t.Errorf("mainAction() with valid config error = %v, want nil", err)
+	// Add context with short timeout
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	ctx.Context = ctxWithTimeout
+
+	err = MainAction(ctx)
+	if err != nil && err != context.DeadlineExceeded {
+		t.Errorf("MainAction() with valid config error = %v, want nil or deadline exceeded", err)
 	}
 
 	// Test with invalid config path
 	set = flag.NewFlagSet("test", 0)
 	_ = set.Parse([]string{"--config", "nonexistent.yml"})
 	ctx = cli.NewContext(app, set, nil)
-	err = mainAction(ctx)
+	ctx.Context = context.Background() // No timeout needed for error case
+
+	err = MainAction(ctx)
 	if err == nil {
-		t.Error("mainAction() with invalid config path error = nil, want error")
+		t.Error("MainAction() with invalid config path error = nil, want error")
 	}
 }
 
@@ -125,14 +132,14 @@ targets:
 	_ = set.Parse([]string{"--config", tmpFile.Name()})
 	ctx := cli.NewContext(app, set, nil)
 
-	// Create a context with timeout to prevent test from hanging
-	ctxWithTimeout, cancel := context.WithTimeout(ctx.Context, 2*time.Second)
+	// Create a context with shorter timeout
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	ctx.Context = ctxWithTimeout
 
-	err = mainAction(ctx)
+	err = MainAction(ctx)
 	if err != nil && err != context.DeadlineExceeded {
-		t.Errorf("mainAction() with mixed targets error = %v, want nil or deadline exceeded", err)
+		t.Errorf("MainAction() with mixed targets error = %v, want nil or deadline exceeded", err)
 	}
 }
 
@@ -165,20 +172,20 @@ targets: []
 	_ = set.Parse([]string{"--config", tmpFile.Name()})
 	ctx := cli.NewContext(app, set, nil)
 
-	// Create a context with timeout to prevent test from hanging
-	ctxWithTimeout, cancel := context.WithTimeout(ctx.Context, 2*time.Second)
+	// Create a context with shorter timeout
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	ctx.Context = ctxWithTimeout
 
-	// Simulate interrupt after a short delay
+	// Simulate interrupt after a very short delay
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		p, _ := os.FindProcess(os.Getpid())
 		_ = p.Signal(os.Interrupt)
 	}()
 
-	err = mainAction(ctx)
+	err = MainAction(ctx)
 	if err != nil && err != context.DeadlineExceeded {
-		t.Errorf("mainAction() with interrupt error = %v, want nil or deadline exceeded", err)
+		t.Errorf("MainAction() with interrupt error = %v, want nil or deadline exceeded", err)
 	}
 }

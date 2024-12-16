@@ -20,7 +20,7 @@ var (
 	version            string
 )
 
-func mainAction(ctx *cli.Context) error {
+func MainAction(ctx *cli.Context) error {
 	configFile := ctx.String("config")
 	if configFile != "" {
 		config.SetConfigFilePath(configFile)
@@ -79,7 +79,7 @@ func main() {
 				Value: "conf/config.yaml",
 			},
 		},
-		Action: mainAction,
+		Action: MainAction,
 		Authors: []*cli.Author{
 			{
 				Name:  "Yorling",
