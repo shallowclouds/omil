@@ -1,11 +1,15 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func TestConfig(t *testing.T) {
@@ -174,20 +178,18 @@ Targets:
 		// Create invalid config in temp dir
 		testConfigPath := filepath.Join(tmpDir, "invalid_config.yml")
 		err := os.WriteFile(testConfigPath, []byte(`
-# Invalid YAML with syntax errors
+# Invalid YAML with basic syntax error
 Hostname: test-host
 InfluxDBv2:
   Addr: http://localhost:8086
-  Token: "unclosed string
+  Token: test-token
   Org: test-org
-  Bucket: [invalid bracket notation}
+  Bucket: test-bucket
+  : invalid-key  # This is invalid YAML - key cannot be empty
 Targets:
-  - Host: google.com
-    Name: google
-    : invalid-colon
-  - Host: "github.com
-    Name: github
-    Tags: *undefined-anchor
+- Host: google.com
+  Name: google
+  : another-invalid-key  # This is also invalid YAML
 `), 0644)
 		if err != nil {
 			t.Fatal(err)
@@ -199,9 +201,20 @@ Targets:
 		origExit := osExit
 		defer func() { osExit = origExit }()
 
+		// Save original logrus.Fatal and restore it after test
+		origLogFatal := logrus.Fatal
+		defer func() { logrus.Fatal = origLogFatal }()
+
 		exitCalled := false
 		osExit = func(code int) {
 			exitCalled = true
+		}
+
+		var loggedError string
+		logrus.Fatal = func(args ...interface{}) {
+			if len(args) > 0 {
+				loggedError = fmt.Sprint(args...)
+			}
 		}
 
 		// Call Config() in a goroutine since it will exit
@@ -216,6 +229,9 @@ Targets:
 		case <-done:
 			if !exitCalled {
 				t.Error("expected os.Exit to be called for invalid config")
+			}
+			if !strings.Contains(loggedError, "failed to load config") {
+				t.Errorf("expected error message to contain 'failed to load config', got: %q", loggedError)
 			}
 		case <-time.After(time.Second):
 			t.Error("test timed out waiting for Config() to complete")
