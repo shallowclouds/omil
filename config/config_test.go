@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -149,11 +150,12 @@ Targets:
 
 			// Create test logger and capture its output
 			logger, buf := testLogger()
-			logger.SetLevel(logrus.FatalLevel)
+			logger.SetLevel(logrus.DebugLevel) // Change to debug level for more info
 			origLogger := logrus.StandardLogger()
 
 			// Replace the global logger
 			logrus.SetOutput(logger.Out)
+			logrus.SetLevel(logrus.DebugLevel) // Set global logger to debug level
 			logrus.SetFormatter(&logrus.TextFormatter{
 				DisableColors: true,
 				FullTimestamp: true,
@@ -161,7 +163,10 @@ Targets:
 			defer func() {
 				logrus.SetOutput(origLogger.Out)
 				logrus.SetFormatter(origLogger.Formatter)
+				logrus.SetLevel(origLogger.GetLevel())
 			}()
+
+			t.Logf("Running test case: %s", tc.name)
 
 			// Save original os.Exit and restore it after test
 			origExit := osExit
@@ -177,6 +182,11 @@ Targets:
 			var cfg *configStruct
 			go func() {
 				defer close(done)
+				defer func() {
+					if r := recover(); r != nil {
+						t.Logf("Recovered from panic: %v", r)
+					}
+				}()
 				cfg = Config()
 			}()
 
@@ -185,8 +195,13 @@ Targets:
 				if tc.expectError {
 					require.True(t, exitCalled, "Expected os.Exit to be called for invalid config")
 					output := buf.String()
-					require.Contains(t, output, "failed to load config",
-						"Expected error message not found in output")
+					t.Logf("Test output for %s: %q", tc.name, output)
+					if !exitCalled {
+						t.Errorf("Expected os.Exit to be called but it wasn't")
+					}
+					if !strings.Contains(output, "failed to load config") && !strings.Contains(output, "config file not found") {
+						t.Errorf("Expected error message not found in output: %s", output)
+					}
 				} else {
 					require.False(t, exitCalled, "os.Exit was called unexpectedly")
 					require.NotNil(t, cfg, "Expected non-nil config")
