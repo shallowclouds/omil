@@ -4,42 +4,31 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfig(t *testing.T) {
 	// Create a temporary directory for tests
 	tmpDir, err := os.MkdirTemp("", "omil-config-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err, "Failed to create temp directory")
 	defer os.RemoveAll(tmpDir)
 
-	// Reset package-level variables before each test
-	config = nil
-	configFilePath = ""
-	initConfigOnce = sync.Once{}
-
-	t.Run("default config path", func(t *testing.T) {
-		// Reset package-level variables
-		config = nil
-		configFilePath = ""
-		initConfigOnce = sync.Once{}
-
-		// Create conf directory in temp dir
-		confDir := filepath.Join(tmpDir, "conf")
-		if err := os.MkdirAll(confDir, 0755); err != nil {
-			t.Fatal(err)
-		}
-
-		// Create default config file
-		defaultConfigPath := filepath.Join(confDir, "config.yml")
-		err := os.WriteFile(defaultConfigPath, []byte(`
+	testCases := []struct {
+		name           string
+		configContent  string
+		configPath     string
+		expectedConfig *configStruct
+		expectError    bool
+		setupFunc      func(t *testing.T) // Additional setup if needed
+	}{
+		{
+			name: "valid default config",
+			configContent: `
 Hostname: default-host
 InfluxDBv2:
   Addr: http://localhost:8086
@@ -49,67 +38,32 @@ InfluxDBv2:
 Targets:
   - Host: localhost
     Name: local
-`), 0644)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Change working directory to temp dir
-		origWd, err := os.Getwd()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer os.Chdir(origWd)
-
-		if err := os.Chdir(tmpDir); err != nil {
-			t.Fatal(err)
-		}
-
-		// Save original os.Exit and restore it after test
-		origExit := osExit
-		defer func() { osExit = origExit }()
-
-		exitCalled := false
-		osExit = func(code int) {
-			exitCalled = true
-		}
-
-		cfg := Config()
-		if exitCalled {
-			t.Fatal("os.Exit was called unexpectedly")
-		}
-		if cfg == nil {
-			t.Fatal("expected non-nil config")
-		}
-
-		// Verify config parsing
-		if cfg.Hostname != "default-host" {
-			t.Errorf("expected hostname 'default-host', got %q", cfg.Hostname)
-		}
-
-		if cfg.InfluxDBv2.Addr != "http://localhost:8086" {
-			t.Errorf("expected InfluxDB addr 'http://localhost:8086', got %q", cfg.InfluxDBv2.Addr)
-		}
-
-		if len(cfg.Targets) != 1 {
-			t.Errorf("expected 1 target, got %d", len(cfg.Targets))
-		}
-
-		// Verify target
-		if cfg.Targets[0].Host != "localhost" || cfg.Targets[0].Name != "local" {
-			t.Errorf("unexpected target: %+v", cfg.Targets[0])
-		}
-	})
-
-	t.Run("custom config path", func(t *testing.T) {
-		// Reset package-level variables
-		config = nil
-		configFilePath = ""
-		initConfigOnce = sync.Once{}
-
-		// Create test config in temp dir
-		testConfigPath := filepath.Join(tmpDir, "valid_config.yml")
-		err := os.WriteFile(testConfigPath, []byte(`
+`,
+			expectedConfig: &configStruct{
+				Hostname: "default-host",
+				InfluxDBv2: struct {
+					Addr   string `yaml:"Addr"`
+					Org    string `yaml:"Org"`
+					Bucket string `yaml:"Bucket"`
+					Token  string `yaml:"Token"`
+				}{
+					Addr:   "http://localhost:8086",
+					Org:    "default-org",
+					Bucket: "default-bucket",
+					Token:  "default-token",
+				},
+				Targets: []Target{
+					{
+						Host: "localhost",
+						Name: "local",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid custom config with multiple targets",
+			configContent: `
 Hostname: test-host
 InfluxDBv2:
   Addr: http://localhost:8086
@@ -121,188 +75,138 @@ Targets:
     Name: google
   - Host: github.com
     Name: github
-`), 0644)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		SetConfigFilePath(testConfigPath)
-
-		// Save original os.Exit and restore it after test
-		origExit := osExit
-		defer func() { osExit = origExit }()
-
-		exitCalled := false
-		osExit = func(code int) {
-			exitCalled = true
-		}
-
-		cfg := Config()
-		if exitCalled {
-			t.Fatal("os.Exit was called unexpectedly")
-		}
-		if cfg == nil {
-			t.Fatal("expected non-nil config")
-		}
-
-		// Verify config parsing
-		if cfg.Hostname != "test-host" {
-			t.Errorf("expected hostname 'test-host', got %q", cfg.Hostname)
-		}
-
-		if cfg.InfluxDBv2.Addr != "http://localhost:8086" {
-			t.Errorf("expected InfluxDB addr 'http://localhost:8086', got %q", cfg.InfluxDBv2.Addr)
-		}
-
-		if len(cfg.Targets) != 2 {
-			t.Errorf("expected 2 targets, got %d", len(cfg.Targets))
-		}
-
-		// Verify first target
-		if cfg.Targets[0].Host != "google.com" || cfg.Targets[0].Name != "google" {
-			t.Errorf("unexpected first target: %+v", cfg.Targets[0])
-		}
-
-		// Verify second target
-		if cfg.Targets[1].Host != "github.com" || cfg.Targets[1].Name != "github" {
-			t.Errorf("unexpected second target: %+v", cfg.Targets[1])
-		}
-	})
-
-	t.Run("invalid config file", func(t *testing.T) {
-		// Reset package-level variables
-		config = nil
-		configFilePath = ""
-		initConfigOnce = sync.Once{}
-
-		// Create invalid config in temp dir
-		testConfigPath := filepath.Join(tmpDir, "invalid_config.yml")
-		err := os.WriteFile(testConfigPath, []byte(`
-# Invalid YAML with basic syntax error
+`,
+			expectedConfig: &configStruct{
+				Hostname: "test-host",
+				InfluxDBv2: struct {
+					Addr   string `yaml:"Addr"`
+					Org    string `yaml:"Org"`
+					Bucket string `yaml:"Bucket"`
+					Token  string `yaml:"Token"`
+				}{
+					Addr:   "http://localhost:8086",
+					Org:    "test-org",
+					Bucket: "test-bucket",
+					Token:  "test-token",
+				},
+				Targets: []Target{
+					{
+						Host: "google.com",
+						Name: "google",
+					},
+					{
+						Host: "github.com",
+						Name: "github",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid yaml syntax",
+			configContent: `
 Hostname: test-host
 InfluxDBv2:
   Addr: http://localhost:8086
   Token: test-token
   Org: test-org
   Bucket: test-bucket
-  : invalid-key  # This is invalid YAML - key cannot be empty
+  : invalid-key  # Invalid YAML - empty key
 Targets:
 - Host: google.com
   Name: google
-  : another-invalid-key  # This is also invalid YAML
-`), 0644)
-		if err != nil {
-			t.Fatal(err)
-		}
+  : another-invalid-key
+`,
+			expectError: true,
+		},
+		{
+			name:        "nonexistent config file",
+			configPath:  "nonexistent.yml",
+			expectError: true,
+		},
+	}
 
-		SetConfigFilePath(testConfigPath)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset package-level variables
+			config = nil
+			configFilePath = ""
+			initConfigOnce = sync.Once{}
 
-		// Create test logger and capture its output BEFORE calling Config
-		logger, buf := testLogger()
-		logger.SetLevel(logrus.FatalLevel)
-		origLogger := logrus.StandardLogger()
+			// Create test config file if content is provided
+			var testConfigPath string
+			if tc.configContent != "" {
+				testConfigPath = filepath.Join(tmpDir, tc.name+".yml")
+				err := os.WriteFile(testConfigPath, []byte(tc.configContent), 0644)
+				require.NoError(t, err, "Failed to write test config file")
+			} else if tc.configPath != "" {
+				testConfigPath = tc.configPath
+			}
 
-		// Replace the global logger and its formatter
-		logrus.SetOutput(logger.Out)
-		logrus.SetFormatter(&logrus.TextFormatter{
-			DisableColors: true,
-			FullTimestamp: true,
-		})
-		defer func() {
-			logrus.SetOutput(origLogger.Out)
-			logrus.SetFormatter(origLogger.Formatter)
-		}()
+			if testConfigPath != "" {
+				SetConfigFilePath(testConfigPath)
+			}
 
-		// Save original os.Exit and restore it after test
-		origExit := osExit
-		defer func() { osExit = origExit }()
+			// Create test logger and capture its output
+			logger, buf := testLogger()
+			logger.SetLevel(logrus.FatalLevel)
+			origLogger := logrus.StandardLogger()
 
-		exitCalled := false
-		osExit = func(code int) {
-			exitCalled = true
-			t.Logf("os.Exit called with code %d", code)
-			// Print buffer contents at exit time
-			t.Logf("Logger buffer at exit: %q", buf.String())
-		}
-
-		// Add debug logging
-		t.Logf("Test starting with config file: %s", testConfigPath)
-		if _, err := os.Stat(testConfigPath); err != nil {
-			t.Logf("Config file status: %v", err)
-		} else {
-			t.Log("Config file exists")
-		}
-
-		// Call Config() in a goroutine since it will exit
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
+			// Replace the global logger
+			logrus.SetOutput(logger.Out)
+			logrus.SetFormatter(&logrus.TextFormatter{
+				DisableColors: true,
+				FullTimestamp: true,
+			})
 			defer func() {
-				if r := recover(); r != nil {
-					t.Logf("Recovered from panic: %v", r)
-				}
+				logrus.SetOutput(origLogger.Out)
+				logrus.SetFormatter(origLogger.Formatter)
 			}()
-			Config()
-		}()
 
-		// Wait for either exit to be called or timeout
-		select {
-		case <-done:
-			output := buf.String()
-			t.Logf("Final logger output: %q", output)
-			if !exitCalled {
-				t.Error("expected os.Exit to be called for invalid config")
+			// Save original os.Exit and restore it after test
+			origExit := osExit
+			defer func() { osExit = origExit }()
+
+			exitCalled := false
+			osExit = func(code int) {
+				exitCalled = true
 			}
-			expectedMsg := "failed to load config from file"
-			if !strings.Contains(output, expectedMsg) {
-				t.Errorf("expected error message to contain %q, got: %q", expectedMsg, output)
-				// Print the output in a more readable format
-				t.Logf("Logger output (line by line):")
-				for i, line := range strings.Split(output, "\n") {
-					t.Logf("Line %d: %q", i+1, line)
+
+			// Run test with timeout
+			done := make(chan struct{})
+			var cfg *configStruct
+			go func() {
+				defer close(done)
+				cfg = Config()
+			}()
+
+			select {
+			case <-done:
+				if tc.expectError {
+					require.True(t, exitCalled, "Expected os.Exit to be called for invalid config")
+					output := buf.String()
+					require.Contains(t, output, "failed to load config",
+						"Expected error message not found in output")
+				} else {
+					require.False(t, exitCalled, "os.Exit was called unexpectedly")
+					require.NotNil(t, cfg, "Expected non-nil config")
+					require.Equal(t, tc.expectedConfig.Hostname, cfg.Hostname,
+						"Unexpected hostname")
+					require.Equal(t, tc.expectedConfig.InfluxDBv2, cfg.InfluxDBv2,
+						"Unexpected InfluxDBv2 config")
+					require.Equal(t, len(tc.expectedConfig.Targets), len(cfg.Targets),
+						"Unexpected number of targets")
+					for i, target := range tc.expectedConfig.Targets {
+						require.Equal(t, target, cfg.Targets[i],
+							"Unexpected target at index %d", i)
+					}
 				}
+			case <-time.After(time.Second):
+				t.Error("Test timed out")
+				t.Logf("Buffer contents at timeout: %q", buf.String())
 			}
-		case <-time.After(time.Second):
-			t.Error("test timed out waiting for Config() to complete")
-			t.Logf("Buffer contents at timeout: %q", buf.String())
-		}
-	})
-
-	t.Run("nonexistent config file", func(t *testing.T) {
-		// Reset package-level variables
-		config = nil
-		configFilePath = ""
-		initConfigOnce = sync.Once{}
-
-		nonexistentPath := filepath.Join(tmpDir, "nonexistent.yml")
-		SetConfigFilePath(nonexistentPath)
-
-		// Save original os.Exit and restore it after test
-		origExit := osExit
-		defer func() { osExit = origExit }()
-
-		exitCalled := false
-		osExit = func(code int) {
-			exitCalled = true
-		}
-
-		// Call Config() in a goroutine since it will exit
-		done := make(chan struct{})
-		go func() {
-			Config()
-			close(done)
-		}()
-
-		// Wait for either exit to be called or timeout
-		select {
-		case <-done:
-			if !exitCalled {
-				t.Error("expected os.Exit to be called for nonexistent config")
-			}
-		case <-time.After(time.Second):
-			t.Error("test timed out waiting for Config() to complete")
-		}
-	})
+		})
+	}
 }
 
 // testLogger creates a new logrus logger instance with a buffer for capturing output
