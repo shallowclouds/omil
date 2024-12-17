@@ -150,23 +150,27 @@ Targets:
 
 			// Create test logger and capture its output
 			logger, buf := testLogger()
-			logger.SetLevel(logrus.DebugLevel) // Change to debug level for more info
+			logger.SetLevel(logrus.DebugLevel)
+			logger.ExitFunc = func(int) { } // Prevent logger from calling os.Exit
 			origLogger := logrus.StandardLogger()
 
 			// Replace the global logger
 			logrus.SetOutput(logger.Out)
-			logrus.SetLevel(logrus.DebugLevel) // Set global logger to debug level
+			logrus.SetLevel(logrus.DebugLevel)
 			logrus.SetFormatter(&logrus.TextFormatter{
 				DisableColors: true,
 				FullTimestamp: true,
 			})
+			// Override the exit function for the global logger too
+			logrus.StandardLogger().ExitFunc = func(int) { }
 			defer func() {
 				logrus.SetOutput(origLogger.Out)
 				logrus.SetFormatter(origLogger.Formatter)
 				logrus.SetLevel(origLogger.GetLevel())
+				logrus.StandardLogger().ExitFunc = origLogger.ExitFunc
 			}()
 
-			t.Logf("Running test case: %s", tc.name)
+			t.Logf("Running test case: %s with config path: %s", tc.name, testConfigPath)
 
 			// Save original os.Exit and restore it after test
 			origExit := osExit
