@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-ping/ping"
 	"github.com/shallowclouds/omil/metric"
+	"github.com/stretchr/testify/require"
 )
 
 // mockMetricClient implements metric.Client interface for testing
@@ -176,25 +177,15 @@ func TestNewMonitor(t *testing.T) {
 				hostnameFunc = tt.mockHostname
 			}
 			m, err := NewMonitor(tt.host, tt.from, tt.to, tt.interval, tt.timeout, tt.client)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("NewMonitor() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && m == nil {
-				t.Error("NewMonitor() returned nil monitor without error")
-			}
+			require.Equal(t, tt.wantErr, err != nil, "NewMonitor() error = %v, wantErr %v", err, tt.wantErr)
 			if !tt.wantErr {
-				if m.host != tt.host {
-					t.Errorf("NewMonitor() host = %v, want %v", m.host, tt.host)
-				}
-				if m.from != tt.from {
-					t.Errorf("NewMonitor() from = %v, want %v", m.from, tt.from)
-				}
-				if m.to != tt.to {
-					t.Errorf("NewMonitor() to = %v, want %v", m.to, tt.to)
-				}
-				if m.interval != tt.interval && m.interval != time.Second {
-					t.Errorf("NewMonitor() interval = %v, want %v or 1s", m.interval, tt.interval)
+				require.NotNil(t, m, "NewMonitor() returned nil monitor without error")
+				require.Equal(t, tt.host, m.host, "NewMonitor() unexpected host")
+				require.Equal(t, tt.from, m.from, "NewMonitor() unexpected from")
+				require.Equal(t, tt.to, m.to, "NewMonitor() unexpected to")
+				if m.interval != tt.interval {
+					require.Equal(t, time.Second, m.interval,
+						"NewMonitor() unexpected interval, should be either %v or 1s", tt.interval)
 				}
 			}
 		})
@@ -285,16 +276,12 @@ func TestMonitor_Start(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &mockMetricClient{}
 			m, err := NewMonitor(tt.host, "source", "destination", tt.interval, tt.timeout, client)
-			if err != nil {
-				t.Fatalf("NewMonitor() error = %v", err)
-			}
+			require.NoError(t, err, "NewMonitor() error = %v", err)
 
 			if tt.name == "invalid host" || tt.name == "empty host" {
 				// Don't set mock pinger to test real pinger creation
 				err = m.Start(context.Background())
-				if !tt.wantErr {
-					t.Errorf("Start() error = %v, wantErr %v", err, tt.wantErr)
-				}
+				require.Equal(t, tt.wantErr, err != nil, "Start() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
@@ -335,28 +322,25 @@ func TestMonitor_Start(t *testing.T) {
 			}
 
 			err = m.Start(context.Background())
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Start() error = %v, wantErr %v", err, tt.wantErr)
-			}
+			require.Equal(t, tt.wantErr, err != nil, "Start() error = %v, wantErr %v", err, tt.wantErr)
 
 			if !tt.wantErr {
 				// Verify metrics were recorded
-				if len(client.metrics) == 0 {
-					t.Error("Start() did not record any metrics")
-				}
+				require.NotEmpty(t, client.metrics, "Start() did not record any metrics")
 
 				// Verify privileged mode was set correctly
-				if mockPinger, ok := m.pinger.(*mockPinger); ok && mockPinger.privileged != tt.privileged {
-					t.Errorf("Start() privileged = %v, want %v", mockPinger.privileged, tt.privileged)
-				}
-
-				// Verify interval and timeout were set correctly
 				if mockPinger, ok := m.pinger.(*mockPinger); ok {
-					if tt.name == "custom interval" && mockPinger.interval != tt.interval {
-						t.Errorf("Start() interval = %v, want %v", mockPinger.interval, tt.interval)
+					require.Equal(t, tt.privileged, mockPinger.privileged,
+						"Start() privileged mode mismatch")
+
+					// Verify interval and timeout were set correctly
+					if tt.name == "custom interval" {
+						require.Equal(t, tt.interval, mockPinger.interval,
+							"Start() interval mismatch")
 					}
-					if tt.name == "custom timeout" && mockPinger.timeout != tt.timeout {
-						t.Errorf("Start() timeout = %v, want %v", mockPinger.timeout, tt.timeout)
+					if tt.name == "custom timeout" {
+						require.Equal(t, tt.timeout, mockPinger.timeout,
+							"Start() timeout mismatch")
 					}
 				}
 			}
@@ -368,36 +352,21 @@ func TestMonitor_Start(t *testing.T) {
 func TestMonitor_Stop(t *testing.T) {
 	t.Run("stop after start", func(t *testing.T) {
 		m, err := NewMonitor("example.com", "source", "destination", time.Second, time.Minute, &mockMetricClient{})
-		if err != nil {
-			t.Fatalf("NewMonitor() error = %v", err)
-		}
+		require.NoError(t, err, "NewMonitor() error = %v", err)
 
 		mp := &mockPinger{host: "example.com"}
 		m.pinger = mp
 
 		ctx := context.Background()
-		if err := m.Start(ctx); err != nil {
-			t.Fatalf("Start() error = %v", err)
-		}
-
-		if err := m.Stop(); err != nil {
-			t.Errorf("Stop() error = %v", err)
-		}
-
-		if !mp.stopped {
-			t.Error("Stop() did not stop the pinger")
-		}
+		require.NoError(t, m.Start(ctx), "Start() unexpected error")
+		require.NoError(t, m.Stop(), "Stop() unexpected error")
+		require.True(t, mp.stopped, "Stop() did not stop the pinger")
 	})
 
 	t.Run("stop without start", func(t *testing.T) {
 		m, err := NewMonitor("example.com", "source", "destination", time.Second, time.Minute, &mockMetricClient{})
-		if err != nil {
-			t.Fatalf("NewMonitor() error = %v", err)
-		}
-
-		if err := m.Stop(); err != nil {
-			t.Errorf("Stop() error = %v", err)
-		}
+		require.NoError(t, err, "NewMonitor() error = %v", err)
+		require.NoError(t, m.Stop(), "Stop() unexpected error")
 	})
 }
 
@@ -446,20 +415,15 @@ func TestMonitor_Name(t *testing.T) {
 				client:   &mockMetricClient{},
 			}
 
-			if got := m.Name(); got != tt.want {
-				t.Errorf("Name() = %v, want %v", got, tt.want)
-			}
+			require.Equal(t, tt.want, m.Name(), "Name() unexpected result")
 		})
 	}
 }
 
-// TestMonitor_Start_Context tests the context handling in Start method
 func TestMonitor_Start_Context(t *testing.T) {
 	client := &mockMetricClient{}
 	m, err := NewMonitor("example.com", "source", "destination", time.Second, time.Minute, client)
-	if err != nil {
-		t.Fatalf("NewMonitor() error = %v", err)
-	}
+	require.NoError(t, err, "NewMonitor() error = %v", err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -473,7 +437,5 @@ func TestMonitor_Start_Context(t *testing.T) {
 	m.pinger = mockPinger
 
 	err = m.Start(ctx)
-	if err == nil {
-		t.Error("Start() with canceled context should return error")
-	}
+	require.Error(t, err, "Start() with canceled context should return error")
 }
