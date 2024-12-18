@@ -1,0 +1,41 @@
+name: Shared Build Steps
+on:
+  workflow_call:
+    inputs:
+      target_path:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.21'
+      - name: Unit test
+        run: go test ./...
+      - name: Build
+        run: |
+          VERSION=$(git describe --tags --always)
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          ARTIFACT_NAME="omil-${VERSION}-${TIMESTAMP}"
+          chmod +x build.sh
+          bash build.sh
+          mkdir -p build-binary
+          cp -r build omil
+          tar -czvf ${ARTIFACT_NAME}.tar.gz omil
+          mv ${ARTIFACT_NAME}.tar.gz build-binary
+      - name: Upload to OSS
+        id: upload_to_oss
+        uses: tvrcgo/upload-to-oss@v0.1.1
+        with:
+          key-id: ${{ secrets.OSS_KEY_ID }}
+          key-secret: ${{ secrets.OSS_KEY_SECRET }}
+          region: oss-cn-shenzhen
+          bucket: build-binary
+          asset-path: ./build-binary
+          target-path: ${{ inputs.target_path }}
+      - name: Build binary download URL
+        run: echo 'Omil binary url:' ${{steps.upload_to_oss.outputs.url}}
