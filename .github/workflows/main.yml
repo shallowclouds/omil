@@ -19,7 +19,12 @@ jobs:
 
       - name: Lint
         run: |
-          go fmt ./...
+          # Check formatting
+          if [ -n "$(go fmt ./...)" ]; then
+            echo "Code is not properly formatted. Please run 'go fmt ./...'"
+            exit 1
+          fi
+          # Run go vet
           go vet ./...
 
   test:
