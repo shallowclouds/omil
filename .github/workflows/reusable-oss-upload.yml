@@ -1,0 +1,33 @@
+name: Upload to Aliyun OSS
+on:
+  workflow_call:
+    inputs:
+      target-path:
+        required: true
+        type: string
+    secrets:
+      OSS_KEY_ID:
+        required: true
+      OSS_KEY_SECRET:
+        required: true
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: omil-build
+          path: build-binary
+
+      - name: Upload to OSS
+        id: upload_to_oss
+        uses: tvrcgo/upload-to-oss@v0.1.1
+        with:
+          key-id: ${{ secrets.OSS_KEY_ID }}
+          key-secret: ${{ secrets.OSS_KEY_SECRET }}
+          region: oss-cn-shenzhen
+          bucket: build-binary
+          asset-path: ./build-binary
+          target-path: ${{ inputs.target-path }}

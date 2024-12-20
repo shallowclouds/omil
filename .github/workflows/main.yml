@@ -7,49 +7,56 @@ on:
     branches: [ master ]
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-      
-      # set up golang environment
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v4
         with:
-          go-version: '^1.15.3'
-          
-      - run: go version
+          go-version: '1.21'
+          cache: true
 
-      # go test
-      - name: Unit test
-        run: go test ./...
-
-      # build
-      - name: Build
+      - name: Lint
         run: |
-          chmod +x build.sh
-          bash build.sh
-          mkdir -p build-binary
-          cp -r build omil
-          tar -czvf omil-$(git rev-parse --short HEAD).tar.gz omil
-          mv omil-$(git rev-parse --short HEAD).tar.gz build-binary
+          go fmt ./...
+          go vet ./...
 
-      - name: Upload
-        uses: actions/upload-artifact@v2
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.20', '1.21']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v4
         with:
-          name: omil-build
-          path: build
+          go-version: ${{ matrix.go-version }}
+          cache: true
 
-      - name: Upload to OSS
-        id: upload_to_oss
-        uses: tvrcgo/upload-to-oss@v0.1.1
+      - name: Test
+        run: go test -v ./...
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
         with:
-          key-id: ${{ secrets.OSS_KEY_ID }}
-          key-secret: ${{ secrets.OSS_KEY_SECRET }}
-          region: oss-cn-shenzhen
-          bucket: build-binary
-          asset-path: ./build-binary
-          target-path: /github-actions/omil/unstable
+          args: ./...
 
-      - name: Build binary download URL
-        run: echo 'Omil binary url:' ${{steps.upload_to_oss.outputs.url}}
+  build:
+    needs: [lint, test, security]
+    uses: ./.github/workflows/reusable-build.yml
+
+  upload:
+    needs: build
+    uses: ./.github/workflows/reusable-oss-upload.yml
+    with:
+      target-path: /github-actions/omil/unstable
+    secrets:
+      OSS_KEY_ID: ${{ secrets.OSS_KEY_ID }}
+      OSS_KEY_SECRET: ${{ secrets.OSS_KEY_SECRET }}
