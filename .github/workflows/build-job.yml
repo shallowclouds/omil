@@ -1,0 +1,72 @@
+name: Build Job
+
+on:
+  workflow_call:
+    outputs:
+      binary_url:
+        description: "The URL of the uploaded binary"
+        value: ${{ jobs.build.outputs.binary_url }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      binary_url: ${{ steps.upload_to_oss.outputs.url }}
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '^1.20'
+          
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Code quality checks
+        run: |
+          go fmt ./...
+          go vet ./...
+
+      - name: Run tests with coverage
+        run: |
+          go test -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage.out
+
+      - name: Build
+        run: |
+          chmod +x build.sh
+          bash build.sh
+          mkdir -p build-binary
+          cp -r build omil
+          tar -czvf omil-$(git rev-parse --short HEAD).tar.gz omil
+          mv omil-$(git rev-parse --short HEAD).tar.gz build-binary
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: omil-build
+          path: build
+
+      - name: Upload to OSS
+        id: upload_to_oss
+        uses: tvrcgo/upload-to-oss@v0.1.1
+        with:
+          key-id: ${{ secrets.OSS_KEY_ID }}
+          key-secret: ${{ secrets.OSS_KEY_SECRET }}
+          region: oss-cn-shenzhen
+          bucket: build-binary
+          asset-path: ./build-binary
+          target-path: ${{ github.event_name == 'release' && '/github-actions/omil/stable' || '/github-actions/omil/unstable' }}
