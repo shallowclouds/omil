@@ -18,6 +18,7 @@ import (
 var (
 	compiledTimeString string
 	version            string
+	gitHash           string
 )
 
 func mainAction(ctx *cli.Context) error {
@@ -66,8 +67,8 @@ func main() {
 		HelpName:    "help",
 		Usage:       "omil --config <config_file_path>",
 		ArgsUsage:   "",
-		Version:     fmt.Sprintf("\ngit version: %s\nbuild time: %s", version, compiledTimeString),
-		Description: fmt.Sprintf("Simple tool for monitoring network latency, build %s", version),
+		Version:     fmt.Sprintf("\nversion: %s\ngit hash: %s\nbuild time: %s", version, gitHash, compiledTimeString),
+		Description: fmt.Sprintf("Simple tool for monitoring network latency, version %s (git %s)", version, gitHash),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
