@@ -29,9 +29,10 @@ jobs:
         id: set_path
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "OSS_PATH=/github-actions/omil/stable" >> $GITHUB_ENV
+            echo "OSS_PATH=/github-actions/omil/stable/${VERSION}" >> $GITHUB_ENV
           else
-            echo "OSS_PATH=/github-actions/omil/unstable" >> $GITHUB_ENV
+            # For non-releases, use date-based directory
+            echo "OSS_PATH=/github-actions/omil/unstable/$(date +%Y%m%d)" >> $GITHUB_ENV
           fi
 
       # set up golang environment
