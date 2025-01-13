@@ -1,0 +1,70 @@
+name: CI/CD Pipeline
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      # Set version based on event type
+      - name: Set Version
+        id: set_version
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            echo "VERSION=0.0.0-dev" >> $GITHUB_ENV
+          fi
+          echo "GIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # Determine upload path
+      - name: Set Upload Path
+        id: set_path
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "OSS_PATH=/github-actions/omil/stable" >> $GITHUB_ENV
+          else
+            echo "OSS_PATH=/github-actions/omil/unstable" >> $GITHUB_ENV
+          fi
+
+      # set up golang environment
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.19'
+          
+      - run: go version
+
+      # go test
+      - name: Unit test
+        run: go test ./...
+
+      # build
+      - name: Build
+        run: |
+          chmod +x build.sh
+          bash build.sh
+          mkdir -p build-binary
+          cp -r build omil
+          tar -czvf omil-v${VERSION}-${GIT_HASH}.tar.gz omil
+          mv omil-v${VERSION}-${GIT_HASH}.tar.gz build-binary
+
+      - name: Upload
+        id: upload_to_oss
+        uses: tvrcgo/upload-to-oss@v0.1.1
+        with:
+          key-id: ${{ secrets.OSS_KEY_ID }}
+          key-secret: ${{ secrets.OSS_KEY_SECRET }}
+          region: oss-cn-shenzhen
+          bucket: build-binary
+          asset-path: ./build-binary
+          target-path: ${{ env.OSS_PATH }}
+
+      - name: Build binary download URL
+        run: echo 'Omil binary url:' ${{steps.upload_to_oss.outputs.url}}
