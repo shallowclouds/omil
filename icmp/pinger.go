@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-ping/ping"
-	"github.com/pkg/errors"
+	"github.com/shallowclouds/go-utils/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/shallowclouds/omil/metric"
