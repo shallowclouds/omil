@@ -24,7 +24,7 @@ func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sigChan := make(chan os.Signal)
+	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 
 	go func() {
