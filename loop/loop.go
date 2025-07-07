@@ -2,12 +2,12 @@ package loop
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/shallowclouds/omil/icmp"
@@ -20,59 +20,66 @@ var (
 )
 
 func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
+	if len(monitors) == 0 {
+		return errors.New("no monitors provided")
+	}
+
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sigChan := make(chan os.Signal)
+	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
+	defer signal.Stop(sigChan)
 
 	go func() {
-		sig := <-sigChan
-		err = ErrInterrupt
-		logrus.Infof("Recv signal %s, exiting...", sig.String())
-		cancel()
-	}()
-
-	restart := true
-	var mu sync.RWMutex
-	go func() {
-		<-ctx.Done()
-		mu.Lock()
-		restart = false
-		mu.Unlock()
-		for _, monitor := range monitors {
-			logrus.Infof("stopping monitor %s", monitor.Name())
-			if err := monitor.Stop(); err != nil {
-				logrus.WithError(err).Error("failed to stop monitor")
-			}
+		select {
+		case sig := <-sigChan:
+			err = ErrInterrupt
+			logrus.Infof("Recv signal %s, exiting...", sig.String())
+			cancel()
+		case <-ctx.Done():
 		}
 	}()
+
 	for _, monitor := range monitors {
 		wg.Add(1)
-		m := monitor
-		go func() {
-			for {
-				mu.RLock()
-				if !restart {
-					logrus.Infof("exiting monitor %s", m.Name())
-					wg.Done()
-					break
-				}
-				mu.RUnlock()
-				if err := m.Start(ctx); err != nil {
-					logrus.WithError(err).Error("failed to run monitor")
-				}
-				time.Sleep(restartInterval)
+		go func(m *icmp.Monitor) {
+			defer wg.Done()
 
-				mu.RLock()
-				if restart {
-					logrus.Infof("restarting monitor %s", m.Name())
+			for {
+				select {
+				case <-ctx.Done():
+					logrus.Infof("exiting monitor %s", m.Name())
+					if err := m.Stop(); err != nil {
+						logrus.WithError(err).Error("failed to stop monitor")
+					}
+					return
+				default:
+					monitorCtx, monitorCancel := context.WithTimeout(ctx, time.Minute*5)
+
+					if err := m.Start(monitorCtx); err != nil {
+						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+							monitorCancel()
+							logrus.Infof("monitor %s cancelled or timed out", m.Name())
+							return
+						}
+						logrus.WithError(err).Errorf("monitor %s failed, restarting in %v", m.Name(), restartInterval)
+					}
+
+					monitorCancel()
+
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(restartInterval):
+						logrus.Infof("restarting monitor %s", m.Name())
+					}
 				}
-				mu.RUnlock()
 			}
-		}()
+		}(monitor)
 	}
+
 	wg.Wait()
-	return nil
+	return err
 }

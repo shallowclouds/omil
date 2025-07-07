@@ -64,7 +64,7 @@ func NewMonitor(host, from, to string, interval, timeout time.Duration, client m
 // Start starts the loop to test network and send data points.
 //
 // Return an error if loop failed.
-func (m *Monitor) Start(_ context.Context) error {
+func (m *Monitor) Start(ctx context.Context) error {
 	pinger, err := ping.NewPinger(m.host)
 	if err != nil {
 		return errors.WithMessage(err, "failed to create pinger")
@@ -78,19 +78,19 @@ func (m *Monitor) Start(_ context.Context) error {
 	pinger.SetPrivileged(true)
 	pinger.Size = 64
 
-	// Use startTime to calculate packet sent time: startTime + interval * packet_sequence_number,
-	// as will cant put the send time in the ICMP packet data at present.
-	// TODO: use a more accurate and graceful way
-	var startTime time.Time
+	startTime := time.Now()
 
 	pinger.OnRecv = func(packet *ping.Packet) {
+		sendTime := startTime.Add(time.Duration(packet.Seq) * m.interval)
+
 		logrus.WithFields(logrus.Fields{
 			"rtt":    packet.Rtt,
 			"nbytes": packet.Nbytes,
 			"seq":    packet.Seq,
 			"ttl":    packet.Ttl,
 		}).Info("recv ICMP packet")
-		m.client.Metric("ICMP", startTime.Add(time.Duration(packet.Seq)*m.interval), map[string]string{
+
+		m.client.Metric("ICMP", sendTime, map[string]string{
 			"from": m.from,
 			"to":   m.to,
 			"host": m.host,
@@ -100,32 +100,44 @@ func (m *Monitor) Start(_ context.Context) error {
 		})
 	}
 
-	m.pinger = pinger
-
-	sendTicker := time.NewTicker(m.interval)
-	defer sendTicker.Stop()
-
-	startTime = time.Now()
 	go func() {
-		// Metrics for sending packets.
-		for t := range sendTicker.C {
-			if t.IsZero() {
-				break
+		ticker := time.NewTicker(m.interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case t := <-ticker.C:
+				m.client.Metric("ICMP", t, map[string]string{
+					"from": m.from,
+					"to":   m.to,
+					"host": m.host,
+				}, map[string]interface{}{
+					"sent": 1,
+				})
 			}
-			m.client.Metric("ICMP", t, map[string]string{
-				"from": m.from,
-				"to":   m.to,
-				"host": m.host,
-			}, map[string]interface{}{
-				"sent": 1,
-			})
 		}
 	}()
-	if err := pinger.Run(); err != nil {
-		return errors.WithMessage(err, "failed to run pinger")
-	}
 
-	return nil
+	m.pinger = pinger
+
+	errChan := make(chan error, 1)
+	go func() {
+		if err := pinger.Run(); err != nil {
+			errChan <- errors.WithMessage(err, "failed to run pinger")
+		} else {
+			errChan <- nil
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		m.pinger.Stop()
+		return ctx.Err()
+	case err := <-errChan:
+		return err
+	}
 }
 
 func (m *Monitor) Stop() error {
