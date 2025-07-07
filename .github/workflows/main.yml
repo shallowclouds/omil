@@ -35,7 +35,7 @@ jobs:
           mv omil-$(git rev-parse --short HEAD).tar.gz build-binary
 
       - name: Upload
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: omil-build
           path: build
