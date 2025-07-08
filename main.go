@@ -36,7 +36,7 @@ func mainAction(ctx *cli.Context) error {
 		// As pinger stores all packets data in memory,
 		// so too long timeout may cause high memory usage.
 		// Just let it stop and restart.
-		monitor, err := icmp.NewMonitor(t.Host, conf.Hostname, t.Name, time.Second, time.Minute*60, metricClient)
+		monitor, err := icmp.NewMonitor(t.Host, conf.Hostname, t.Name, time.Second, time.Duration(conf.TimeoutMinutes)*time.Minute, metricClient)
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"target_host": t.Host,

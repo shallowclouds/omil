@@ -2,12 +2,13 @@ package loop
 
 import (
 	"context"
-	"errors"
+	"math"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/shallowclouds/omil/icmp"
@@ -16,7 +17,9 @@ import (
 var (
 	ErrInterrupt = errors.New("signal interrupt")
 
-	restartInterval = time.Second
+	baseRestartInterval = time.Second
+	maxRestartInterval  = time.Minute * 5
+	maxRetries          = 3
 )
 
 func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
@@ -24,7 +27,7 @@ func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sigChan := make(chan os.Signal)
+	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 
 	go func() {
@@ -52,6 +55,9 @@ func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
 		wg.Add(1)
 		m := monitor
 		go func() {
+			retryCount := 0
+			currentInterval := baseRestartInterval
+
 			for {
 				mu.RLock()
 				if !restart {
@@ -60,14 +66,34 @@ func Loop(ctx context.Context, monitors []*icmp.Monitor) (err error) {
 					break
 				}
 				mu.RUnlock()
+
 				if err := m.Start(ctx); err != nil {
-					logrus.WithError(err).Error("failed to run monitor")
+					retryCount++
+					wrappedErr := errors.Wrapf(err, "failed to run monitor %s (attempt %d/%d)", m.Name(), retryCount, maxRetries)
+					logrus.WithError(wrappedErr).Error("monitor failed")
+
+					if retryCount >= maxRetries {
+						logrus.WithError(wrappedErr).Errorf("monitor %s exceeded max retries, using exponential backoff", m.Name())
+						backoffMultiplier := math.Pow(2, float64(retryCount-maxRetries))
+						currentInterval = time.Duration(float64(baseRestartInterval) * backoffMultiplier)
+						if currentInterval > maxRestartInterval {
+							currentInterval = maxRestartInterval
+						}
+					}
+				} else {
+					retryCount = 0
+					currentInterval = baseRestartInterval
 				}
-				time.Sleep(restartInterval)
+
+				time.Sleep(currentInterval)
 
 				mu.RLock()
 				if restart {
-					logrus.Infof("restarting monitor %s", m.Name())
+					if retryCount > 0 {
+						logrus.Infof("retrying monitor %s (attempt %d)", m.Name(), retryCount+1)
+					} else {
+						logrus.Infof("restarting monitor %s", m.Name())
+					}
 				}
 				mu.RUnlock()
 			}

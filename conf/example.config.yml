@@ -1,18 +1,36 @@
+# Omil Network Monitoring Configuration
+# This file contains configuration options for the Omil network monitoring tool
+
+# Hostname of this monitoring server (used as metric tag 'from')
+# If not specified, defaults to 'localhost'
 Hostname: "home-lab"
+
+# Monitor timeout in minutes (how long each monitor runs before restarting)
+# Valid range: 1-1440 minutes (1 minute to 24 hours)
+# If not specified, defaults to 60 minutes
+TimeoutMinutes: 60
+
+# List of targets to monitor (at least one target is required)
 Targets:
-  - Host: "baidu.com"
-    Name: "baidu"
+  - Host: "baidu.com"      # Target hostname or IP address
+    Name: "baidu"          # Friendly name for this target (used in metrics)
   - Host: "google.com"
     Name: "google"
   - Host: "10.1.1.1"
     Name: "gateway"
+
+# InfluxDB v1.x configuration (deprecated but still supported)
+# Only configure this if you're using InfluxDB 1.x
 InfluxDBv1:
-  Addr: "http://192.168.1.2:8086"
-  Username: "client"
-  Password: "password"
-  Database: "sample-db"
+  Addr: "http://192.168.1.2:8086"  # InfluxDB server address
+  Username: "client"               # Username for authentication
+  Password: "password"             # Password for authentication
+  Database: "sample-db"            # Database name (required if Addr is specified)
+
+# InfluxDB v2.x configuration (recommended)
+# Configure either InfluxDBv1 or InfluxDBv2 (or both)
 InfluxDBv2:
-  Addr: "http://192.168.1.2:8086"
-  Org: "org-name"
-  Bucket: "bucket-name"
-  Token: "token"
+  Addr: "http://192.168.1.2:8086"  # InfluxDB server address
+  Org: "org-name"                  # Organization name (required if Addr is specified)
+  Bucket: "bucket-name"            # Bucket name (required if Addr is specified)
+  Token: "token"                   # Authentication token (required if Addr is specified)
